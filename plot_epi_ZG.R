@@ -267,8 +267,8 @@ tstar_qt = tstar %>% filter(risk_class != 'Very_high') %>%
 tstar_qt %>% filter(sex=='male', risk_class=='Medium_low')
   
 # Proportion of t* < first assessment
-tstar_inneed <- function(stg){
-  tstar_uncover = tstar %>% filter(risk_class != 'Very_high') %>% 
+prop_inneed <- function(stg){
+  prop = tstar %>% filter(risk_class != 'Very_high') %>% 
     mutate(delta = ifelse(pred_status==1, delta, 8)) %>% 
     group_by(sex, lm_age, risk_class) %>% 
     summarise(mean = mean(delta <= case_when(risk_class == 'Low' & lm_age<65 ~ stg[1],
@@ -280,18 +280,55 @@ tstar_inneed <- function(stg){
                                                      risk_class == 'High' & lm_age<65 ~ stg[7],
                                                      risk_class == 'High' & lm_age>=65 ~ stg[8]))) %>% 
     ungroup %>% pivot_wider(names_from = risk_class, values_from = mean)
-  return(tstar_uncover)
+  return(prop)
 }
 
 
-# Proportion of T_wait > 1
 # input strategy, a vector of length length 8 for low(<65), low(>=65), ... high(>=65)
+
+# Avg time of staying in high risk before screen
+tstar_undetect <- function(stg){
+  tstar_inneed <- tstar %>% filter(risk_class != 'Very_high') %>% 
+    mutate(delta = ifelse(pred_status==1, delta, 8)) %>% 
+    filter(delta <= case_when(risk_class == 'Low' & lm_age<65 ~ stg[1],
+                              risk_class == 'Low' & lm_age>=65 ~ stg[2],
+                              risk_class == 'Medium_low' & lm_age<65 ~ stg[3],
+                              risk_class == 'Medium_low' & lm_age>=65 ~ stg[4],
+                              risk_class == 'Medium_high' & lm_age<65 ~ stg[5],
+                              risk_class == 'Medium_high' & lm_age>=65 ~ stg[6],
+                              risk_class == 'High' & lm_age<65 ~ stg[7],
+                              risk_class == 'High' & lm_age>=65 ~ stg[8]))
+  
+  tstar_undet = tstar_inneed %>% group_by(sex, lm_age, risk_class) %>% 
+    mutate(undetect = case_when(risk_class == 'Low' & lm_age<65 ~ stg[1],
+                                risk_class == 'Low' & lm_age>=65 ~ stg[2],
+                                risk_class == 'Medium_low' & lm_age<65 ~ stg[3],
+                                risk_class == 'Medium_low' & lm_age>=65 ~ stg[4],
+                                risk_class == 'Medium_high' & lm_age<65 ~ stg[5],
+                                risk_class == 'Medium_high' & lm_age>=65 ~ stg[6],
+                                risk_class == 'High' & lm_age<65 ~ stg[7],
+                                risk_class == 'High' & lm_age>=65 ~ stg[8])-delta) %>% 
+    summarise(mean = mean(undetect)) %>% ungroup %>% 
+    pivot_wider(names_from = risk_class, values_from = mean)
+  return(tstar_undet)
+}
+
+# Proportion of T_wait > 1
 tstar_uncovered <- function(stg){
+  # Conditional on t* <= first assessment
+  tstar_inneed <- tstar %>% filter(risk_class != 'Very_high') %>% 
+    mutate(delta = ifelse(pred_status==1, delta, 8)) %>% 
+    filter(delta <= case_when(risk_class == 'Low' & lm_age<65 ~ stg[1],
+                              risk_class == 'Low' & lm_age>=65 ~ stg[2],
+                              risk_class == 'Medium_low' & lm_age<65 ~ stg[3],
+                              risk_class == 'Medium_low' & lm_age>=65 ~ stg[4],
+                              risk_class == 'Medium_high' & lm_age<65 ~ stg[5],
+                              risk_class == 'Medium_high' & lm_age>=65 ~ stg[6],
+                              risk_class == 'High' & lm_age<65 ~ stg[7],
+                              risk_class == 'High' & lm_age>=65 ~ stg[8]))
   # window of 1 year
   stg = stg -1
-  tstar_uncover = tstar %>% filter(risk_class != 'Very_high') %>% 
-    mutate(delta = ifelse(pred_status==1, delta, 8)) %>% 
-    group_by(sex, lm_age, risk_class) %>% 
+  tstar_uncover = tstar_inneed %>% group_by(sex, lm_age, risk_class) %>% 
     summarise(mean = 1-mean(ifelse(delta < case_when(risk_class == 'Low' & lm_age<65 ~ stg[1],
                                                    risk_class == 'Low' & lm_age>=65 ~ stg[2],
                                                    risk_class == 'Medium_low' & lm_age<65 ~ stg[3],
@@ -305,46 +342,39 @@ tstar_uncovered <- function(stg){
   return(tstar_uncover)
 }
 
-# Avg time of staying in high risk before screen
-tstar_undetect <- function(stg){
-  tstar_undet = tstar %>% filter(risk_class != 'Very_high') %>% 
-    mutate(delta = ifelse(pred_status==1, delta, 8)) %>% 
-    group_by(sex, lm_age, risk_class) %>% mutate(undetect = case_when(risk_class == 'Low' & lm_age<65 ~ stg[1],
-                                                                      risk_class == 'Low' & lm_age>=65 ~ stg[2],
-                                                                      risk_class == 'Medium_low' & lm_age<65 ~ stg[3],
-                                                                      risk_class == 'Medium_low' & lm_age>=65 ~ stg[4],
-                                                                      risk_class == 'Medium_high' & lm_age<65 ~ stg[5],
-                                                                      risk_class == 'Medium_high' & lm_age>=65 ~ stg[6],
-                                                                      risk_class == 'High' & lm_age<65 ~ stg[7],
-                                                                      risk_class == 'High' & lm_age>=65 ~ stg[8])-delta) %>% 
-    mutate(undetect = ifelse(undetect>0, undetect, 0)) %>% 
-    summarise(mean = mean(undetect)) %>% ungroup %>% 
-    pivot_wider(names_from = risk_class, values_from = mean)%>%
-    select(sex, lm_age, Low, Medium_low, Medium_high, High)
-  return(tstar_undet)
-}
 
-tstar_inneed(rep(5,8))
+prop_inneed(rep(5,8))
+prop_inneed(c(8,8,8,8,6,6,2,2))
+prop_inneed(c(8,8,8,8,5,5,2,2))
+prop_inneed(c(8,8,8,8,4,4,1,1))
+prop_inneed(c(8,8,8,8,5,4,2,1))
+prop_inneed(c(8,8,8,8,4,3,1,1))
+prop_inneed(c(8,8,8,7,8,5,3,2))
+prop_inneed(c(8,8,8,6,5,3,1,1))
 
-
-tstar_uncovered(rep(5,8))
-tstar_uncovered(c(8,8,8,8,6,6,2,2))
-tstar_uncovered(c(8,8,8,8,5,5,2,2))
-tstar_uncovered(c(8,8,8,8,4,4,1,1))
-tstar_uncovered(c(8,8,8,6,5,3,1,1))
-tstar_uncovered(c(8,8,8,8,4,3,1,1))
-tstar_uncovered(c(8,8,8,7,8,5,3,2))
-tstar_uncovered(c(8,8,8,8,5,4,2,1))
 
 
 tstar_undetect(rep(5,8))
 tstar_undetect(c(8,8,8,8,6,6,2,2))
 tstar_undetect(c(8,8,8,8,5,5,2,2))
 tstar_undetect(c(8,8,8,8,4,4,1,1))
-tstar_undetect(c(8,8,8,6,5,3,1,1))
+tstar_undetect(c(8,8,8,8,5,4,2,1))
 tstar_undetect(c(8,8,8,8,4,3,1,1))
 tstar_undetect(c(8,8,8,7,8,5,3,2))
-tstar_undetect(c(8,8,8,8,5,4,2,1))
+tstar_undetect(c(8,8,8,6,5,3,1,1))
+
+
+# tstar_uncovered(rep(5,8))
+# tstar_uncovered(c(8,8,8,8,6,6,2,2))
+# tstar_uncovered(c(8,8,8,8,5,5,2,2))
+# tstar_uncovered(c(8,8,8,8,4,4,1,1))
+# tstar_uncovered(c(8,8,8,6,5,3,1,1))
+# tstar_uncovered(c(8,8,8,8,4,3,1,1))
+# tstar_uncovered(c(8,8,8,7,8,5,3,2))
+# tstar_uncovered(c(8,8,8,8,5,4,2,1))
+
+
+
 
 
 ##########################################################

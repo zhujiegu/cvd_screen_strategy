@@ -86,12 +86,29 @@ stopifnot( length(which( !is.na(outcomes$death_date) & outcomes$death_date < out
 
 #keep only the exposures before CVD date 
 exposures_red = exposures_red[, c("patid", "exp_date", "exp_age", "exposure", "original", "scaled")]
-exposures_red_merged = merge( exposures_red, outcomes[,c("patid", "d_yob", "cvd_date", "cvd_ind", "gender", "derivation") ], by = "patid")  
-cvd_exp_cond = ( exposures_red_merged$cvd_date - exposures_red_merged$d_yob )/365.25 > exposures_red_merged$exp_age | is.na( exposures_red_merged$cvd_date )
+sum(unique(exposures_red$patid) %in% outcomes$patid)
 
+exposures_red_merged = merge( exposures_red, outcomes[,c("patid", "d_yob", "cvd_date", "cvd_ind", "gender", "derivation") ], by = "patid")  
+exposures_red_merged$patid %>% unique %>% length()
+cvd_exp_cond = ( exposures_red_merged$cvd_date - exposures_red_merged$d_yob )/365.25 > exposures_red_merged$exp_age | is.na( exposures_red_merged$cvd_date )
 exposures_red_merged = exposures_red_merged[which(cvd_exp_cond), ]
+exposures_red_merged$patid %>% unique %>% length()
 
 print("here0")
+
+# Duplicated and conflicted measurements
+# remove duplicated
+exposures_red_merged <- as.data.table(exposures_red_merged)
+dup <- duplicated(exposures_red_merged)
+exposures_red_merged$patid[dup] %>% unique %>% length()
+exposures_red_merged$exposure[dup] %>% table
+exposures_red_merged <- exposures_red_merged[!dup,]
+exposures_red_merged$patid %>% unique %>% length()
+
+# take average conflicted
+exposures_red_merged <- exposures_red_merged %>% group_by(patid, exp_date, exposure) %>% 
+  mutate(original = mean(original)) %>%
+  distinct(patid, exp_date, exposure, .keep_all = TRUE) %>% ungroup %>% as.data.frame()
 
 #creating the correct scaled variable
 exposures_red_merged$scaled_corr = 0
@@ -103,27 +120,41 @@ male_id = which( exposures_red_merged$gender == "Male" )
 print("here1")
 
 for(var in c("bmi","hdl", "tchol", "sbp")){
-  #creating scaled variable for the derivation set
-  ioi_female_deriv = which( exposures_red_merged$gender == "Female" & exposures_red_merged$exposure == var & exposures_red_merged$derivation == "derivation" )
-  ioi_male_deriv   = which( exposures_red_merged$gender == "Male"   & exposures_red_merged$exposure == var & exposures_red_merged$derivation == "derivation" )
+  # #creating scaled variable for the derivation set
+  # ioi_female_deriv = which( exposures_red_merged$gender == "Female" & exposures_red_merged$exposure == var & exposures_red_merged$derivation == "derivation" )
+  # ioi_male_deriv   = which( exposures_red_merged$gender == "Male"   & exposures_red_merged$exposure == var & exposures_red_merged$derivation == "derivation" )
+  # 
+  # female_mean_deriv = mean( exposures_red_merged[ioi_female_deriv, "original" ] ) 
+  # male_mean_deriv   = mean( exposures_red_merged[ioi_male_deriv, "original" ] ) 
+  # 
+  # #overall_sd = sd( exposures_red_merged$original )
+  # female_sd_deriv = sd( exposures_red_merged[ioi_female_deriv, "original" ] ) 
+  # male_sd_deriv   = sd( exposures_red_merged[ioi_male_deriv, "original" ] ) 
+  # 
+  # exposures_red_merged$scaled_corr[ioi_female_deriv ] = (exposures_red_merged$original[ioi_female_deriv ] - female_mean_deriv)/female_sd_deriv
+  # exposures_red_merged$scaled_corr[ioi_male_deriv ]   = (exposures_red_merged$original[ioi_male_deriv ] - male_mean_deriv)/male_sd_deriv
+  # 
+  # #creating scaled variable for the validation set
+  # ioi_female_valid = which( exposures_red_merged$gender == "Female" & exposures_red_merged$exposure == var & exposures_red_merged$derivation == "validation" )
+  # ioi_male_valid   = which( exposures_red_merged$gender == "Male"   & exposures_red_merged$exposure == var & exposures_red_merged$derivation == "validation" )
+  # 
+  # #standardize using mean and sd from derivation set
+  # exposures_red_merged$scaled_corr[ioi_female_valid ] = (exposures_red_merged$original[ioi_female_valid ] - female_mean_deriv)/female_sd_deriv
+  # exposures_red_merged$scaled_corr[ioi_male_valid ]   = (exposures_red_merged$original[ioi_male_valid ] - male_mean_deriv)/male_sd_deriv
   
-  female_mean_deriv = mean( exposures_red_merged[ioi_female_deriv, "original" ] ) 
-  male_mean_deriv   = mean( exposures_red_merged[ioi_male_deriv, "original" ] ) 
+  #creating scaled variable for the derivation set
+  ioi_female = which( exposures_red_merged$gender == "Female" & exposures_red_merged$exposure == var)
+  ioi_male   = which( exposures_red_merged$gender == "Male"   & exposures_red_merged$exposure == var)
+  
+  female_mean = mean( exposures_red_merged[ioi_female, "original" ] ) 
+  male_mean   = mean( exposures_red_merged[ioi_male, "original" ] ) 
   
   #overall_sd = sd( exposures_red_merged$original )
-  female_sd_deriv = sd( exposures_red_merged[ioi_female_deriv, "original" ] ) 
-  male_sd_deriv   = sd( exposures_red_merged[ioi_male_deriv, "original" ] ) 
+  female_sd = sd( exposures_red_merged[ioi_female, "original" ] ) 
+  male_sd   = sd( exposures_red_merged[ioi_male, "original" ] ) 
   
-  exposures_red_merged$scaled_corr[ioi_female_deriv ] = (exposures_red_merged$original[ioi_female_deriv ] - female_mean_deriv)/female_sd_deriv
-  exposures_red_merged$scaled_corr[ioi_male_deriv ]   = (exposures_red_merged$original[ioi_male_deriv ] - male_mean_deriv)/male_sd_deriv
-  
-  #creating scaled variable for the validation set
-  ioi_female_valid = which( exposures_red_merged$gender == "Female" & exposures_red_merged$exposure == var & exposures_red_merged$derivation == "validation" )
-  ioi_male_valid   = which( exposures_red_merged$gender == "Male"   & exposures_red_merged$exposure == var & exposures_red_merged$derivation == "validation" )
-  
-  #standardize using mean and sd from derivation set
-  exposures_red_merged$scaled_corr[ioi_female_valid ] = (exposures_red_merged$original[ioi_female_valid ] - female_mean_deriv)/female_sd_deriv
-  exposures_red_merged$scaled_corr[ioi_male_valid ]   = (exposures_red_merged$original[ioi_male_valid ] - male_mean_deriv)/male_sd_deriv
+  exposures_red_merged$scaled_corr[ioi_female] = (exposures_red_merged$original[ioi_female] - female_mean)/female_sd
+  exposures_red_merged$scaled_corr[ioi_male]   = (exposures_red_merged$original[ioi_male] - male_mean)/male_sd
   }
 
 # align exposure and outcome patid
