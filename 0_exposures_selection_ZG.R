@@ -5,160 +5,87 @@ library(nlme)
 library(survival)
 library(tidyverse)
 library(haven)
+library(magrittr)
 
 out_path <- '/rds/project/jmmh2/rds-jmmh2-hes_data/electronic_health_records/cprd/DataFiles/analysis/zhujie/'
-in_path <- '/rds/project/jmmh2/rds-jmmh2-hes_data/electronic_health_records/cprd/DataFiles/analysis/'
+in_path <- '/rds/project/jmmh2/rds-jmmh2-hes_data/electronic_health_records/cprd/DataFiles/analysis/zhujie/'
 
-load(paste0(in_path,'patients_outcomes.RData'))
-load(paste0(in_path,'/cprd_2M_exposures.RData'))
+load(paste0(in_path,'outcomes_new.RData'))
+load(paste0(in_path,'exposures_new.RData'))
 
-#keep variables of interest
-exp_oi = c("bmi","hdl", "tchol", "sbp", "smokbin")
-exposures_red = exposures[which( exposures$exposure %in% exp_oi ), ]
+# #keep variables of interest
+# exp_oi = c("bmi","hdl", "tchol", "sbp", "smokbin")
+# exposures_red = exposures[which( exposures$exposure %in% exp_oi ), ]
 
-#remove the exposures data
-rm(exposures); gc()
+# #remove the exposures data
+# rm(exposures); gc()
 
-#remove unrealistic data
-real_sbp     = which( exposures_red$exposure == "sbp"   & exposures_red$original >= 60   & exposures_red$original <= 250 )
-real_tchol   = which( exposures_red$exposure == "tchol" & exposures_red$original >= 1.75 & exposures_red$original <= 20 )
-real_hdl     = which( exposures_red$exposure == "hdl"   & exposures_red$original >= 0.3  & exposures_red$original <= 3.1 )
-real_bmi     = which( exposures_red$exposure == "bmi"   & exposures_red$original <= 80 )
-real_smokbin = which( exposures_red$exposure == "smokbin" )
+# Remove patients who do not have outcome data
+exposures %<>% filter(patid %in% outcomes$patid)
+stopifnot(all(unique(exposures$patid) %in% outcomes$patid))
 
-real_values   = sort( c( real_sbp, real_tchol, real_hdl, real_bmi, real_smokbin ) )
-exposures_red = exposures_red[real_values, ]
-
-rm( real_bmi, real_sbp, real_smokbin, real_tchol, real_hdl, real_values )
-
-stopifnot(all(unique(exposures_red$patid) %in% outcomes$patid))
-
-
-#check on correctness CVD, DEATH and END times
-# colnames(outcomes)
-# outcomes[, c("cvd_date", "death_date", "end_date")]
-
-#correct CVD post censoring
-cvd_post_censoring = which( !is.na(outcomes$cvd_date) & outcomes$end_date < outcomes$cvd_date )
-length( cvd_post_censoring )
-outcomes$cvd_date[cvd_post_censoring ] = NA
-outcomes$cvd_ind[cvd_post_censoring ] = 0
-
-cvd_post_censoring = which( !is.na(outcomes$cvd_date) & outcomes$end_date < outcomes$cvd_date )
-stopifnot( length( cvd_post_censoring ) == 0 )
-rm( cvd_post_censoring )
-
-#uniform the notation for indices of events:
-length( which(is.na( outcomes$cvd_ind)))
-length( which(is.na( outcomes$cvd_ind ) & is.na(outcomes$cvd_date)))
-
-outcomes$cvd_ind[which(is.na( outcomes$cvd_ind)) ] = 0
-length( which(is.na( outcomes$death_ind)))
-
-
-#correct Death post censoring
-death_post_censoring = which( !is.na(outcomes$death_date) & outcomes$end_date < outcomes$death_date )
-length( death_post_censoring )
-outcomes$death_date[death_post_censoring ] = NA
-outcomes$death_ind[death_post_censoring ] = 0
-
-death_post_censoring = which( !is.na(outcomes$death_date) & outcomes$end_date < outcomes$death_date )
-stopifnot( length( death_post_censoring ) == 0 )
-rm( death_post_censoring )
-
-#correct CVD post Death
-cvd_post_death = which( !is.na(outcomes$cvd_date) & outcomes$death_date < outcomes$cvd_date )
-stopifnot( length( cvd_post_death ) == 0 )
-rm(cvd_post_death)
-
-
-#CVD/Statin/death before entering
-cvd_before_start <- which( !is.na(outcomes$cvd_date) & outcomes$cvd_date < outcomes$start_date )
-statin_before_start <- which(!is.na(outcomes$statins_prscd) & outcomes$statins_prscd < outcomes$start_date)
-death_before_start <- which( !is.na(outcomes$death_date) & outcomes$death_date < outcomes$start_date )
-length(unique(c(cvd_before_start, statin_before_start)))
-
-outcomes <- outcomes[-c(cvd_before_start, statin_before_start), ]
-
-stopifnot( length(which( !is.na(outcomes$cvd_date) & outcomes$cvd_date < outcomes$start_date )) == 0 )
-stopifnot( length(which( !is.na(outcomes$statins_prscd) & outcomes$statins_prscd < outcomes$start_date )) == 0 )
-stopifnot( length(which( !is.na(outcomes$death_date) & outcomes$death_date < outcomes$start_date )) == 0 )
+sum(unique(exposures$patid) %in% outcomes$patid)
+exposures_merged = merge( exposures, outcomes[,c("patid", "d_yob", "cvd_date", "end_date", "cvd_ind", "gender", "derivation") ], by = "patid")  
+exposures_merged %<>% mutate(exp_age = as.numeric(exp_date-d_yob)/365.25)
 
 #keep only the exposures before CVD date 
-exposures_red = exposures_red[, c("patid", "exp_date", "exp_age", "exposure", "original", "scaled")]
-sum(unique(exposures_red$patid) %in% outcomes$patid)
+cvd_exp_cond = ( exposures_merged$cvd_date - exposures_merged$d_yob )/365.25 > exposures_merged$exp_age | is.na( exposures_merged$cvd_date )
+exposures_merged = exposures_merged[which(cvd_exp_cond), ]
+exposures_merged$patid %>% unique %>% length()
 
-exposures_red_merged = merge( exposures_red, outcomes[,c("patid", "d_yob", "cvd_date", "cvd_ind", "gender", "derivation") ], by = "patid")  
-exposures_red_merged$patid %>% unique %>% length()
-cvd_exp_cond = ( exposures_red_merged$cvd_date - exposures_red_merged$d_yob )/365.25 > exposures_red_merged$exp_age | is.na( exposures_red_merged$cvd_date )
-exposures_red_merged = exposures_red_merged[which(cvd_exp_cond), ]
-exposures_red_merged$patid %>% unique %>% length()
-
-print("here0")
-
-# Duplicated and conflicted measurements
-# remove duplicated
-exposures_red_merged <- as.data.table(exposures_red_merged)
-dup <- duplicated(exposures_red_merged)
-exposures_red_merged$patid[dup] %>% unique %>% length()
-exposures_red_merged$exposure[dup] %>% table
-exposures_red_merged <- exposures_red_merged[!dup,]
-exposures_red_merged$patid %>% unique %>% length()
-
-# take average conflicted
-exposures_red_merged <- exposures_red_merged %>% group_by(patid, exp_date, exposure) %>% 
-  mutate(original = mean(original)) %>%
-  distinct(patid, exp_date, exposure, .keep_all = TRUE) %>% ungroup %>% as.data.frame()
+#keep only the exposures before end date 
+exposures_merged %<>% filter(exp_age <= (end_date - d_yob)/365.25)
+exposures_merged$patid %>% unique %>% length()
 
 #creating the correct scaled variable
-exposures_red_merged$scaled_corr = 0
-exposures_red_merged$scaled_corr[exposures_red_merged$exposure == "smokbin"] = exposures_red_merged$original[exposures_red_merged$exposure == "smokbin"] 
+exposures_merged$scaled_corr = 0
+exposures_merged$scaled_corr[exposures_merged$exposure == "smokbin"] = exposures_merged$original[exposures_merged$exposure == "smokbin"] 
 
-female_id = which( exposures_red_merged$gender == "Female" )
-male_id = which( exposures_red_merged$gender == "Male" )
+female_id = which( exposures_merged$gender == "Female" )
+male_id = which( exposures_merged$gender == "Male" )
 
+exposures_merged %<>% as.data.frame
 print("here1")
 
 for(var in c("bmi","hdl", "tchol", "sbp")){
   # #creating scaled variable for the derivation set
-  # ioi_female_deriv = which( exposures_red_merged$gender == "Female" & exposures_red_merged$exposure == var & exposures_red_merged$derivation == "derivation" )
-  # ioi_male_deriv   = which( exposures_red_merged$gender == "Male"   & exposures_red_merged$exposure == var & exposures_red_merged$derivation == "derivation" )
+  # ioi_female_deriv = which( exposures_merged$gender == "Female" & exposures_merged$exposure == var & exposures_merged$derivation == "derivation" )
+  # ioi_male_deriv   = which( exposures_merged$gender == "Male"   & exposures_merged$exposure == var & exposures_merged$derivation == "derivation" )
   # 
-  # female_mean_deriv = mean( exposures_red_merged[ioi_female_deriv, "original" ] ) 
-  # male_mean_deriv   = mean( exposures_red_merged[ioi_male_deriv, "original" ] ) 
+  # female_mean_deriv = mean( exposures_merged[ioi_female_deriv, "original" ] ) 
+  # male_mean_deriv   = mean( exposures_merged[ioi_male_deriv, "original" ] ) 
   # 
-  # #overall_sd = sd( exposures_red_merged$original )
-  # female_sd_deriv = sd( exposures_red_merged[ioi_female_deriv, "original" ] ) 
-  # male_sd_deriv   = sd( exposures_red_merged[ioi_male_deriv, "original" ] ) 
+  # #overall_sd = sd( exposures_merged$original )
+  # female_sd_deriv = sd( exposures_merged[ioi_female_deriv, "original" ] ) 
+  # male_sd_deriv   = sd( exposures_merged[ioi_male_deriv, "original" ] ) 
   # 
-  # exposures_red_merged$scaled_corr[ioi_female_deriv ] = (exposures_red_merged$original[ioi_female_deriv ] - female_mean_deriv)/female_sd_deriv
-  # exposures_red_merged$scaled_corr[ioi_male_deriv ]   = (exposures_red_merged$original[ioi_male_deriv ] - male_mean_deriv)/male_sd_deriv
+  # exposures_merged$scaled_corr[ioi_female_deriv ] = (exposures_merged$original[ioi_female_deriv ] - female_mean_deriv)/female_sd_deriv
+  # exposures_merged$scaled_corr[ioi_male_deriv ]   = (exposures_merged$original[ioi_male_deriv ] - male_mean_deriv)/male_sd_deriv
   # 
   # #creating scaled variable for the validation set
-  # ioi_female_valid = which( exposures_red_merged$gender == "Female" & exposures_red_merged$exposure == var & exposures_red_merged$derivation == "validation" )
-  # ioi_male_valid   = which( exposures_red_merged$gender == "Male"   & exposures_red_merged$exposure == var & exposures_red_merged$derivation == "validation" )
+  # ioi_female_valid = which( exposures_merged$gender == "Female" & exposures_merged$exposure == var & exposures_merged$derivation == "validation" )
+  # ioi_male_valid   = which( exposures_merged$gender == "Male"   & exposures_merged$exposure == var & exposures_merged$derivation == "validation" )
   # 
   # #standardize using mean and sd from derivation set
-  # exposures_red_merged$scaled_corr[ioi_female_valid ] = (exposures_red_merged$original[ioi_female_valid ] - female_mean_deriv)/female_sd_deriv
-  # exposures_red_merged$scaled_corr[ioi_male_valid ]   = (exposures_red_merged$original[ioi_male_valid ] - male_mean_deriv)/male_sd_deriv
+  # exposures_merged$scaled_corr[ioi_female_valid ] = (exposures_merged$original[ioi_female_valid ] - female_mean_deriv)/female_sd_deriv
+  # exposures_merged$scaled_corr[ioi_male_valid ]   = (exposures_merged$original[ioi_male_valid ] - male_mean_deriv)/male_sd_deriv
+
+  ioi_female = which( exposures_merged$gender == "Female" & exposures_merged$exposure == var)
+  ioi_male   = which( exposures_merged$gender == "Male"   & exposures_merged$exposure == var)
   
-  #creating scaled variable for the derivation set
-  ioi_female = which( exposures_red_merged$gender == "Female" & exposures_red_merged$exposure == var)
-  ioi_male   = which( exposures_red_merged$gender == "Male"   & exposures_red_merged$exposure == var)
+  female_mean = mean( exposures_merged[ioi_female, "original" ] ) 
+  male_mean   = mean( exposures_merged[ioi_male, "original" ] ) 
   
-  female_mean = mean( exposures_red_merged[ioi_female, "original" ] ) 
-  male_mean   = mean( exposures_red_merged[ioi_male, "original" ] ) 
+  #overall_sd = sd( exposures_merged$original )
+  female_sd = sd( exposures_merged[ioi_female, "original"]) 
+  male_sd   = sd( exposures_merged[ioi_male, "original"]) 
   
-  #overall_sd = sd( exposures_red_merged$original )
-  female_sd = sd( exposures_red_merged[ioi_female, "original" ] ) 
-  male_sd   = sd( exposures_red_merged[ioi_male, "original" ] ) 
-  
-  exposures_red_merged$scaled_corr[ioi_female] = (exposures_red_merged$original[ioi_female] - female_mean)/female_sd
-  exposures_red_merged$scaled_corr[ioi_male]   = (exposures_red_merged$original[ioi_male] - male_mean)/male_sd
+  exposures_merged$scaled_corr[ioi_female] = (exposures_merged$original[ioi_female] - female_mean)/female_sd
+  exposures_merged$scaled_corr[ioi_male]   = (exposures_merged$original[ioi_male] - male_mean)/male_sd
   }
 
 # align exposure and outcome patid
-patid_unique <- unique(exposures_red_merged$patid)
+patid_unique <- unique(exposures_merged$patid)
 stopifnot(all(patid_unique %in% outcomes$patid))
 outcomes %<>% filter(patid %in% patid_unique)
 
@@ -170,41 +97,41 @@ print("People censored with a diagnosis of CVD")
 length( which( outcomes$cvd_ind == 1 & outcomes$death_ind == 0 ) )/length(outcomes$cvd_ind)
 print("People censored without a diagnosis of CVD")
 length( which( outcomes$cvd_ind == 0 & outcomes$death_ind == 0 ) )/length(outcomes$cvd_ind)
-# table( exposures_red_merged$original[exposures_red_merged$exposure == "smokbin"] )
-# table( exposures_red_merged$scaled[exposures_red_merged$exposure == "smokbin"] )
-# table( exposures_red_merged$scaled_corr[exposures_red_merged$exposure == "smokbin"] )
+# table( exposures_merged$original[exposures_merged$exposure == "smokbin"] )
+# table( exposures_merged$scaled[exposures_merged$exposure == "smokbin"] )
+# table( exposures_merged$scaled_corr[exposures_merged$exposure == "smokbin"] )
 
-# hist( exposures_red_merged$scaled[which( exposures_red_merged$exposure == "bmi" & exposures_red_merged$gender == "Female" )] )
-# hist( exposures_red_merged$scaled_corr[which( exposures_red_merged$exposure == "bmi" & exposures_red_merged$gender == "Female" )] )
+# hist( exposures_merged$scaled[which( exposures_merged$exposure == "bmi" & exposures_merged$gender == "Female" )] )
+# hist( exposures_merged$scaled_corr[which( exposures_merged$exposure == "bmi" & exposures_merged$gender == "Female" )] )
 # 
-# hist( exposures_red_merged$scaled[which( exposures_red_merged$exposure == "bmi" & exposures_red_merged$gender == "Male" )] )
-# hist( exposures_red_merged$scaled_corr[which( exposures_red_merged$exposure == "bmi" & exposures_red_merged$gender == "Male" )] )
-# 
-# 
-# hist( exposures_red_merged$scaled[which( exposures_red_merged$exposure == "hdl" & exposures_red_merged$gender == "Female" )] )
-# hist( exposures_red_merged$scaled_corr[which( exposures_red_merged$exposure == "hdl" & exposures_red_merged$gender == "Female" )] )
-# 
-# hist( exposures_red_merged$scaled[which( exposures_red_merged$exposure == "hdl" & exposures_red_merged$gender == "Male" )] )
-# hist( exposures_red_merged$scaled_corr[which( exposures_red_merged$exposure == "hdl" & exposures_red_merged$gender == "Male" )] )
+# hist( exposures_merged$scaled[which( exposures_merged$exposure == "bmi" & exposures_merged$gender == "Male" )] )
+# hist( exposures_merged$scaled_corr[which( exposures_merged$exposure == "bmi" & exposures_merged$gender == "Male" )] )
 # 
 # 
-# hist( exposures_red_merged$scaled[which( exposures_red_merged$exposure == "sbp" & exposures_red_merged$gender == "Female" )] )
-# hist( exposures_red_merged$scaled_corr[which( exposures_red_merged$exposure == "sbp" & exposures_red_merged$gender == "Female" )] )
+# hist( exposures_merged$scaled[which( exposures_merged$exposure == "hdl" & exposures_merged$gender == "Female" )] )
+# hist( exposures_merged$scaled_corr[which( exposures_merged$exposure == "hdl" & exposures_merged$gender == "Female" )] )
 # 
-# hist( exposures_red_merged$scaled[which( exposures_red_merged$exposure == "sbp" & exposures_red_merged$gender == "Male" )] )
-# hist( exposures_red_merged$scaled_corr[which( exposures_red_merged$exposure == "sbp" & exposures_red_merged$gender == "Male" )] )
+# hist( exposures_merged$scaled[which( exposures_merged$exposure == "hdl" & exposures_merged$gender == "Male" )] )
+# hist( exposures_merged$scaled_corr[which( exposures_merged$exposure == "hdl" & exposures_merged$gender == "Male" )] )
 # 
-# table( exposures_red_merged$scaled[which( exposures_red_merged$exposure == "smokbin" & exposures_red_merged$gender == "Female" )] )
-# table( exposures_red_merged$scaled_corr[which( exposures_red_merged$exposure == "smokbin" & exposures_red_merged$gender == "Female" )] )
 # 
-# table( exposures_red_merged$scaled[which( exposures_red_merged$exposure == "smokbin" & exposures_red_merged$gender == "Male" )] )
-# table( exposures_red_merged$scaled_corr[which( exposures_red_merged$exposure == "smokbin" & exposures_red_merged$gender == "Male" )] )
+# hist( exposures_merged$scaled[which( exposures_merged$exposure == "sbp" & exposures_merged$gender == "Female" )] )
+# hist( exposures_merged$scaled_corr[which( exposures_merged$exposure == "sbp" & exposures_merged$gender == "Female" )] )
 # 
-# hist( exposures_red_merged$scaled[which( exposures_red_merged$exposure == "tchol" & exposures_red_merged$gender == "Female" )] )
-# hist( exposures_red_merged$scaled_corr[which( exposures_red_merged$exposure == "tchol" & exposures_red_merged$gender == "Female" )] )
+# hist( exposures_merged$scaled[which( exposures_merged$exposure == "sbp" & exposures_merged$gender == "Male" )] )
+# hist( exposures_merged$scaled_corr[which( exposures_merged$exposure == "sbp" & exposures_merged$gender == "Male" )] )
 # 
-# hist( exposures_red_merged$scaled[which( exposures_red_merged$exposure == "tchol" & exposures_red_merged$gender == "Male" )] )
-# hist( exposures_red_merged$scaled_corr[which( exposures_red_merged$exposure == "tchol" & exposures_red_merged$gender == "Male" )] )
+# table( exposures_merged$scaled[which( exposures_merged$exposure == "smokbin" & exposures_merged$gender == "Female" )] )
+# table( exposures_merged$scaled_corr[which( exposures_merged$exposure == "smokbin" & exposures_merged$gender == "Female" )] )
+# 
+# table( exposures_merged$scaled[which( exposures_merged$exposure == "smokbin" & exposures_merged$gender == "Male" )] )
+# table( exposures_merged$scaled_corr[which( exposures_merged$exposure == "smokbin" & exposures_merged$gender == "Male" )] )
+# 
+# hist( exposures_merged$scaled[which( exposures_merged$exposure == "tchol" & exposures_merged$gender == "Female" )] )
+# hist( exposures_merged$scaled_corr[which( exposures_merged$exposure == "tchol" & exposures_merged$gender == "Female" )] )
+# 
+# hist( exposures_merged$scaled[which( exposures_merged$exposure == "tchol" & exposures_merged$gender == "Male" )] )
+# hist( exposures_merged$scaled_corr[which( exposures_merged$exposure == "tchol" & exposures_merged$gender == "Male" )] )
 
-save( exposures_red_merged, file = (paste0(out_path,'exposures_red_merged.RData')))
-save(outcomes, file = (paste0(out_path,'outcomes.RData')))
+save(exposures_merged, file = (paste0(out_path,'exposures_merged_new_popmean.RData')))
+# save(outcomes, file = (paste0(out_path,'outcomes.RData')))

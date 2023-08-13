@@ -18,10 +18,10 @@ library(tidyverse)
 library(magrittr)
 library(haven)
 
-load(paste0(in_path,'outcomes.RData'))
-load(paste0(in_path,'exposures_red_merged.RData'))
+load(paste0(in_path,'outcomes_new.RData'))
+load(paste0(in_path,'exposures_merged_new_popmean.RData'))
 # align exposure and outcome patid
-patid_unique <- unique(exposures_red_merged$patid)
+patid_unique <- unique(exposures_merged$patid)
 stopifnot(all(patid_unique %in% outcomes$patid))
 outcomes %<>% filter(patid %in% patid_unique)
 
@@ -32,10 +32,10 @@ cat(j,"\n")
 #j = 80
 
 ## Descriptives
-# patid_unique <- unique(exposures_red_merged$patid)
+# patid_unique <- unique(exposures_merged$patid)
 # length(patid_unique)
-# length(unique(exposures_red_merged$patid[exposures_red_merged$gender == "Female"]))
-# length(unique(exposures_red_merged$patid[exposures_red_merged$gender == "Male"]))
+# length(unique(exposures_merged$patid[exposures_merged$gender == "Female"]))
+# length(unique(exposures_merged$patid[exposures_merged$gender == "Male"]))
 # length(unique(outcomes$pracid))
 # length(unique(outcomes$region))
 # length(unique(outcomes$pracid[outcomes$derivation == 'derivation']))
@@ -70,46 +70,6 @@ selected_pt = outcomes$patid[ selected_id ]
 colnames(outcomes)
 # outcomes[, c("cvd_date", "death_date", "end_date")]
 
-#correct CVD post censoring
-cvd_post_censoring = which( !is.na(outcomes$cvd_date) & outcomes$end_date < outcomes$cvd_date )
-cvd_during_censoring = which( !is.na(outcomes$cvd_date) & outcomes$end_date == outcomes$cvd_date & is.na( outcomes$death_date )   )
-
-length( which( !is.na(outcomes$cvd_date) & outcomes$end_date == outcomes$cvd_date ) )
-
-length( cvd_post_censoring )
-outcomes$cvd_date[ cvd_post_censoring ] = NA
-outcomes$cvd_ind[ cvd_post_censoring ] = 0
-
-outcomes$end_date[ cvd_during_censoring ] = outcomes$end_date[ cvd_during_censoring ] + 1
-outcomes$cvd_ind[ cvd_during_censoring ] = 1 #it was already 1
-
-cvd_post_censoring = which( !is.na(outcomes$cvd_date) & outcomes$end_date < outcomes$cvd_date )
-stopifnot( length( cvd_post_censoring ) == 0 )
-rm( cvd_post_censoring )
-
-#uniform the notation for indices of events:
-length( which(is.na( outcomes$cvd_ind)))
-length( which(is.na( outcomes$cvd_ind ) & is.na(outcomes$cvd_date)))
-
-outcomes$cvd_ind[ which(is.na( outcomes$cvd_ind)) ] = 0
-
-
-#correct Death post censoring
-death_post_censoring = which( !is.na(outcomes$death_date) & outcomes$end_date < outcomes$death_date )
-length( death_post_censoring )
-outcomes$death_date[ death_post_censoring ] = NA
-outcomes$death_ind[ death_post_censoring ] = 0
-
-death_post_censoring = which( !is.na(outcomes$death_date) & outcomes$end_date < outcomes$death_date )
-stopifnot( length( death_post_censoring ) == 0 )
-rm( death_post_censoring )
-
-#correct CVD post Death
-cvd_post_death = which( !is.na(outcomes$cvd_date) & outcomes$death_date < outcomes$cvd_date )
-stopifnot( length( cvd_post_death ) == 0 )
-rm( cvd_post_death )
-
-
 print("People that died with CVD (during or after diagnosis)")
 length( which( outcomes$cvd_ind == 1 & outcomes$death_ind == 1 ) )/length(outcomes$cvd_ind)
 print("People that died without a diagnosis of CVD")
@@ -123,9 +83,9 @@ length( which( outcomes$cvd_ind == 0 & outcomes$death_ind == 0 ) )/length(outcom
 outcomes_selected = outcomes[ selected_id, ]
 
 #Keep only the exposures of those patients that satisfy all the requirements
-exposures_selected = exposures_red_merged[ exposures_red_merged$patid %in% selected_pt, ]
+exposures_selected = exposures_merged[ exposures_merged$patid %in% selected_pt, ]
 
-rm( exposures_red_merged, outcomes, selected_id, selected_pt, end_age_cond,
+rm( exposures_merged, outcomes, selected_id, selected_pt, end_age_cond,
     cvd_age_cond, gender_cond, start_age_cond,
     statin_age_cond)
 
@@ -134,25 +94,8 @@ exposures_selected$future = ifelse( exposures_selected$exp_age >=j, 1, 0 )
 #adding age corrected (centralised)
 exposures_selected$exp_age_corr = exposures_selected$exp_age - j
 
-#Select columns to keep in outcomes dataset
-
-outcome_columns_to_keep = c( "patid", "pracid", "region", "bp_med_prscd", "statins_prscd", "statinuser",
-                             "townsend_20", "gen_ethnicity", 
-                             "diab_type", "diab_type_uncertainty", "diab_ind" , "diab_date", 
-                             "rheumatoid_arthritis_ind", "rheumatoid_arthritis_date",
-                             "Atrial_fibrillation_ind", "Atrial_fibrillation_date",
-                             "renal_ind", "renal_date",
-                             "depression_ind", "depression_date",
-                             "SLE_ind", "SLE_date",                  
-                             "Migraine_ind", "Migraine_date",
-                             "Severe_mental_illness_ind", "Severe_mental_illness_date",
-                             "Dementia_ind", "Dementia_date", 
-                             "death_date", "end_date", "death_ind", "derivation" ) 
-
-
-
 #Creating the final data: we can have people with NO exposures
-data_ext = merge( exposures_selected, outcomes_selected[ ,outcome_columns_to_keep], by = "patid", all = F )
+data_ext = merge( exposures_selected, outcomes_selected, all = F )
 
 dim( data_ext )
 
@@ -165,8 +108,8 @@ data_ext$bp_bin = ifelse( data_ext$bp_med_prscd <= data_ext$exp_date & !is.na(da
 #sbp measure ind
 data_ext$sbp_ind = ifelse( data_ext$exposure == "sbp", 1, 0 ) 
 
-#chol ratio measure ind
-data_ext$cholratio_ind = ifelse( data_ext$exposure == "hdl_tchol", 1, 0 ) 
+#tchol measure ind
+data_ext$tchol_ind = ifelse( data_ext$exposure == "tchol", 1, 0 ) 
 
 
 print("almost creating data_table")
@@ -195,7 +138,6 @@ stopifnot( length( which( data_ext$diab_ind == 1 ) ) ==  length( which( !is.na( 
 stopifnot( length( which( data_ext$Atrial_fibrillation_ind == 1 ) ) ==  length( which( !is.na( data_ext$Atrial_fibrillation_date ) ) ) )
 stopifnot( length( which( data_ext$rheumatoid_arthritis_ind == 1 ) ) ==  length( which( !is.na( data_ext$rheumatoid_arthritis_date ) ) ) )
 stopifnot( length( which( data_ext$renal_ind == 1 ) ) ==  length( which( !is.na( data_ext$renal_date ) ) ) )
-
 stopifnot( length( which( data_ext$death_ind == 1 ) ) ==  length( which( !is.na( data_ext$death_date ) ) ) )
 stopifnot( length( which( data_ext$cvd_ind == 1 ) ) ==  length( which( !is.na( data_ext$cvd_date ) ) ) )
 
@@ -212,16 +154,10 @@ data_ext[ ,rheumatoid_arthritis_age := ifelse( is.na( rheumatoid_arthritis_date 
 data_ext[ ,Atrial_fibrillation_age := ifelse( is.na( Atrial_fibrillation_date ), NA, ( Atrial_fibrillation_date - d_yob )/365.25 ) ]
 data_ext[ ,Severe_mental_illness_age := ifelse( is.na( Severe_mental_illness_date ), NA, ( Severe_mental_illness_date - d_yob )/365.25 ) ]
 data_ext[ ,Migraine_age := ifelse( is.na( Migraine_date ), NA, ( Migraine_date - d_yob )/365.25 ) ]
-data_ext[ ,Dementia_age := ifelse( is.na( Dementia_date ), NA, ( Dementia_date - d_yob )/365.25 ) ]
 data_ext[ ,depression_age := ifelse( is.na( depression_date ), NA, ( depression_date - d_yob )/365.25 ) ]
-data_ext[ ,SLE_age := ifelse( is.na( SLE_date ), NA, ( SLE_date - d_yob )/365.25 ) ]
-
-
-#data_ext$gen_ethnicity[ which( data_ext$gen_ethnicity == "" )] = "Unknown"
-data_ext$gen_ethnicity = as.factor( data_ext$gen_ethnicity )
 
 #imputing !!!!!!!!!!!!!!!!!!!!!!!!
-data_ext$townsend_20[ which( is.na( data_ext$townsend_20 ) ) ] = mean( data_ext$townsend_20, na.rm = T )
+data_ext$Townsend[ which( is.na( data_ext$Townsend ) ) ] = median( data_ext$Townsend, na.rm = T )
 
 #family hisotry 
 data_ext[ ,family_history := 0 ]
@@ -229,9 +165,6 @@ CHD_patid = family_data$patid[grep( "FH: premature coronary heart disease", fami
 data_ext[ patid %in% CHD_patid, family_history := 1 ]
 
 stopifnot( length( which( data_ext$exp_age > data_ext$end_age ) ) == 0 )
-
-data_ext$derivation <- data_ext$derivation.x
-data_ext <- data_ext[, -c('derivation.x','derivation.y')]
 
 save( data_ext, file =  paste0( path_to_save, "data_lm_",j, "_", gender,".RData" ) )
 print('1_lm_dataset.R completed')

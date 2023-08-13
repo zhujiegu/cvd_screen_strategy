@@ -19,7 +19,6 @@ library(feather)
 library(dplyr)
 library(miceadds)
 library(dplyr)
-library(survival)
 library(pec)
 library(rms)
 library(riskRegression)
@@ -33,8 +32,6 @@ source("~/epi_paper/pred_error_check.R")
 load(paste0(in_path, gender, "/data_lm_",j, "_", gender,".RData"))
 mod_type = "RIRS_"
 load(paste0(in_path2,j,"_", gender,".RData"))
-data_ext$derivation <- data_ext$derivation.x
-data_ext <- data_ext[, -c('derivation.x','derivation.y')]
 #######################
 #
 # Type of analysis
@@ -46,7 +43,7 @@ outcomes_names = c('bmi','hdl','sbp', 'smokbin','tchol')
 N_outcomes = length(outcomes_names)
 
 #GLOBAL Horizon
-GLOB_horizon = 10
+GLOB_horizon = 8
 
 
 #N subjects
@@ -57,10 +54,10 @@ patid_all = unique(data_ext$patid)
 #setting covariates for the cox model
 #no more SLE ind and family ind nor Dementia
 cox_cov_less60 = c("bp_bin + diab_ind + hdl_blup_FE4 + sbp_blup_FE4 + smoke_blup_FE4 + 
-                   tchol_blup_FE4 + bmi_blup_FE4 + townsend_20  +  depression_ind + 
+                   tchol_blup_FE4 + bmi_blup_FE4 + Townsend  +  depression_ind + 
                    Severe_mental_illness_ind + Migraine_ind ")
 cox_cov_more60 = c("bp_bin + diab_ind + hdl_blup_FE4 + sbp_blup_FE4 + smoke_blup_FE4 + 
-                   tchol_blup_FE4 + bmi_blup_FE4 + townsend_20 + renal_disease + 
+                   tchol_blup_FE4 + bmi_blup_FE4 + Townsend + renal_disease + 
                    atrial_fibrillation + rheumatoid_arthritis +  depression_ind + 
                    Severe_mental_illness_ind + Migraine_ind")
 
@@ -68,13 +65,13 @@ cox_cov_more60 = c("bp_bin + diab_ind + hdl_blup_FE4 + sbp_blup_FE4 + smoke_blup
 if(j >= 60){
   cox_cov = cox_cov_more60
   cox_cov_list = c("bp_bin", "diab_ind", "hdl_blup_FE4", "sbp_blup_FE4", "smoke_blup_FE4", 
-                   "tchol_blup_FE4", "bmi_blup_FE4", "townsend_20", "renal_disease", 
+                   "tchol_blup_FE4", "bmi_blup_FE4", "Townsend", "renal_disease", 
                    "atrial_fibrillation", "rheumatoid_arthritis",   "depression_ind", 
                    "Severe_mental_illness_ind",  "Migraine_ind") #"Dementia_ind"
 }else{
   cox_cov = cox_cov_less60
   cox_cov_list = c("bp_bin", "diab_ind", "hdl_blup_FE4", "sbp_blup_FE4", "smoke_blup_FE4", "tchol_blup_FE4", 
-                   "bmi_blup_FE4", "townsend_20",  "depression_ind", "Severe_mental_illness_ind", 
+                   "bmi_blup_FE4", "Townsend",  "depression_ind", "Severe_mental_illness_ind", 
                    "Migraine_ind" ) # bp_bin removed
 }
 
@@ -110,29 +107,25 @@ covariates_matrix = as.data.table(unique(data_ext$patid))
 
 cov_rec_before_lm_name = c("bp_bin", "statin_bin", "renal_disease",
                            "atrial_fibrillation", "rheumatoid_arthritis",
-                           "Severe_mental_illness_ind", "Migraine_ind", "Dementia_ind", "depression_ind",
-                           "SLE_ind")
+                           "Severe_mental_illness_ind", "Migraine_ind", "depression_ind","diab_ind")
 
 cov_rec_before_lm = c("bp_med_age", "statin_age", "renal_age",
                        "Atrial_fibrillation_age", "rheumatoid_arthritis_age",
-                       "Severe_mental_illness_age", "Migraine_age", "Dementia_age", "depression_age",
-                       "SLE_age")
+                       "Severe_mental_illness_age", "Migraine_age", "depression_age","diab_age")
 
 covariates_matrix = data_ext[exp_count == 1, lapply(.SD, function(x) ifelse(x <= j & !is.na(x), 1, 0)),
                              .SDcols = cov_rec_before_lm]
 colnames(covariates_matrix) = cov_rec_before_lm_name
 covariates_matrix = cbind(covariates_matrix, 
                           data_ext[exp_count == 1, 
-                                   .(patid, townsend_20, gen_ethnicity, family_history, derivation) ])
-covariates_matrix$diab_ind = data_ext[exp_count == 1, ifelse(diab_age <= j  & !is.na(diab_age) & 
-                                                               diab_type == 2 & !is.na(diab_type), 1, 0)]
+                                   .(patid, Townsend, family_history, derivation) ])
 
 setcolorder(covariates_matrix, c( "patid", "derivation", "diab_ind", "bp_bin",
-                                    "statin_bin", "townsend_20", "gen_ethnicity",
+                                    "statin_bin", "Townsend",
                                     "renal_disease", "atrial_fibrillation",
                                     "rheumatoid_arthritis", "Severe_mental_illness_ind",
-                                    "Migraine_ind", "Dementia_ind", 
-                                    "depression_ind", "SLE_ind", "family_history"))
+                                    "Migraine_ind", 
+                                    "depression_ind", "family_history"))
 
 
 #adding space for predicted time-varying covariates
@@ -140,9 +133,8 @@ covariates_matrix = cbind(covariates_matrix,
                           as.data.table(matrix(0, nrow = length(unique(data_ext$patid)), 
                                                ncol = N_outcomes*(GLOB_horizon + 1))))
 colnames(covariates_matrix) = c("patid", "derivation", "diab_ind", "bp_med", "statin_bin",
-                                   'townsend_20', 'ethnia','renal_disease','atrial_fibrillation','rheumatoid_arthritis',
-                                   'Severe_mental_illness_ind','Migraine_ind', 'Dementia_ind', 'depression_ind', 
-                                   'SLE_ind', 'family_history',
+                                   'Townsend', 'renal_disease','atrial_fibrillation','rheumatoid_arthritis',
+                                   'Severe_mental_illness_ind','Migraine_ind', 'depression_ind', 'family_history',
                                    'bmi_blup_0', 'hdl_blup_0',  'sbp_blup_0', 'smoke_blup_0', 'tchol_blup_0',
                                    'bmi_blup_1', 'hdl_blup_1',   'sbp_blup_1',  'smoke_blup_1', 'tchol_blup_1',
                                    'bmi_blup_2', 'hdl_blup_2',   'sbp_blup_2',  'smoke_blup_2', 'tchol_blup_2',
@@ -151,9 +143,7 @@ colnames(covariates_matrix) = c("patid", "derivation", "diab_ind", "bp_med", "st
                                    'bmi_blup_5', 'hdl_blup_5',   'sbp_blup_5',  'smoke_blup_5', 'tchol_blup_5',
                                    'bmi_blup_6', 'hdl_blup_6',   'sbp_blup_6',  'smoke_blup_6', 'tchol_blup_6',
                                    'bmi_blup_7', 'hdl_blup_7',   'sbp_blup_7',  'smoke_blup_7', 'tchol_blup_7',
-                                   'bmi_blup_8', 'hdl_blup_8',   'sbp_blup_8',  'smoke_blup_8', 'tchol_blup_8',
-                                   'bmi_blup_9', 'hdl_blup_9',   'sbp_blup_9',  'smoke_blup_9', 'tchol_blup_9',
-                                   'bmi_blup_10', 'hdl_blup_10',  'sbp_blup_10', 'smoke_blup_10', 'tchol_blup_10'
+                                   'bmi_blup_8', 'hdl_blup_8',   'sbp_blup_8',  'smoke_blup_8', 'tchol_blup_8'
 )
 
 
@@ -172,19 +162,16 @@ dati_baseline = data.table(
   patid = unique(data_ext$patid),
   #bp_bin_base = as.numeric(ifelse(data_ext[ exp_count == 1, !is.na(bp_med_age) & bp_med_age  <= j ], 1, 0)),
   #statin_bin_base = as.numeric(ifelse(data_ext[ exp_count == 1, !is.na(statin_age) & statin_age  <= j ], 1, 0)),
-  diab_ind = data_ext[ exp_count == 1, ifelse(diab_age <= j  & !is.na(diab_age) & diab_type == 2 & !is.na(diab_type), 1, 0) ],
+  diab_ind = data_ext[ exp_count == 1, ifelse(diab_age <= j & !is.na(diab_age), 1, 0) ],
   bp_bin = data_ext[ exp_count == 1, ifelse(bp_med_age <= j & !is.na(bp_med_age), 1, 0) ],
   statin_ind = data_ext[ exp_count == 1, ifelse(statin_age <= j  & !is.na(statin_age), 1, 0) ],
-  townsend_20 = data_ext[ exp_count == 1, townsend_20 ],
-  ethnia = data_ext[ exp_count == 1, gen_ethnicity ],
+  Townsend = data_ext[ exp_count == 1, Townsend ],
   renal_disease = data_ext[ exp_count == 1, ifelse(renal_age <= j  & !is.na(renal_age), 1, 0)  ],
   atrial_fibrillation = data_ext[ exp_count == 1, ifelse(Atrial_fibrillation_age <= j  & !is.na(Atrial_fibrillation_age), 1, 0)  ],
   rheumatoid_arthritis = data_ext[ exp_count == 1, ifelse(rheumatoid_arthritis_age <= j  & !is.na(rheumatoid_arthritis_age), 1, 0)  ],
   Severe_mental_illness_ind = data_ext[ exp_count == 1, ifelse(Severe_mental_illness_age <= j  & !is.na(Severe_mental_illness_age), 1, 0)  ],
-  Dementia_ind = data_ext[ exp_count == 1, ifelse(Dementia_age <= j  & !is.na(Dementia_age), 1, 0)  ],
   Migraine_ind = data_ext[ exp_count == 1, ifelse(Migraine_age <= j  & !is.na(Migraine_age), 1, 0)  ],
   depression_ind = data_ext[ exp_count == 1, ifelse(depression_age <= j  & !is.na(depression_age), 1, 0)  ],
-  SLE_ind = data_ext[ exp_count == 1, ifelse(SLE_age <= j  & !is.na(SLE_age), 1, 0)  ],
   family_history = data_ext[ exp_count == 1, "family_history" ],
   status_cvd_death = -1000,
   status_death = -1000,
@@ -216,7 +203,7 @@ ref_all_complete = data_ext %>%
   left_join(ref_all, by = "patid") %>%
   mutate_if(is.numeric, ~replace_na(.,0))
 
-for(l in 0:10){
+for(l in 0:GLOB_horizon){
   blup_BMI_tmp = fit_rirs$coefficients$fixed["exposurebmi"] + ref_all_complete[,"exposurebmi"] +
     (fit_rirs$coefficients$fixed["exposurebmi:exp_age_corr"] + 
        ref_all_complete[,"exposurebmi:exp_age_corr"])  * l 
@@ -308,18 +295,18 @@ for(l in 0:GLOB_horizon)
   outcome_status_death_cvd[outcome_time_cvd$cvd_age < outcome_time_death$death_age & 
                              outcome_status_cvd$cvd_age == 1] = 1
   ############################################
-  # Disagreement
-  sum(outcome_time_cvd$cvd_age < outcome_time_death$death_age & 
-        outcome_status_cvd$cvd_age == 1)
-  
-  # note here that when death is NA, the death_age is the end_age (see Line 290)
-  # There are people who's end_age is the same as cvd_age
-  sum(outcome_time_cvd$cvd_age == outcome_time_death$death_age & 
-        outcome_status_cvd$cvd_age == 1 &  outcome_status_death$death_age == 0)
-
-  sum((outcome_time_cvd$cvd_age < outcome_time_death$death_age & outcome_status_cvd$cvd_age == 1)|
-        (outcome_time_cvd$cvd_age == outcome_time_death$death_age & 
-           outcome_status_cvd$cvd_age == 1 &  outcome_status_death$death_age == 0))
+  # # Disagreement
+  # sum(outcome_time_cvd$cvd_age < outcome_time_death$death_age & 
+  #       outcome_status_cvd$cvd_age == 1)
+  # 
+  # # note here that when death is NA, the death_age is the end_age (see Line 290)
+  # # There are people who's end_age is the same as cvd_age
+  # sum(outcome_time_cvd$cvd_age == outcome_time_death$death_age & 
+  #       outcome_status_cvd$cvd_age == 1 &  outcome_status_death$death_age == 0)
+  # 
+  # sum((outcome_time_cvd$cvd_age < outcome_time_death$death_age & outcome_status_cvd$cvd_age == 1)|
+  #       (outcome_time_cvd$cvd_age == outcome_time_death$death_age & 
+  #          outcome_status_cvd$cvd_age == 1 &  outcome_status_death$death_age == 0))
   
   outcome_status_death_cvd[(outcome_time_cvd$cvd_age < outcome_time_death$death_age & outcome_status_cvd$cvd_age == 1)|
                              (outcome_time_cvd$cvd_age == outcome_time_death$death_age & 
@@ -382,59 +369,59 @@ for(l in 0:GLOB_horizon)
   dim(estimated_surv)
   
   
-  if(l == 0){
-    #CVD outcome
-    cvd_age_glob_hor = data_ext_in_time[ exp_count == 1, lapply(.SD, function(x) ifelse(is.na(x), min(j + GLOB_horizon, end_age) - j, min(j + GLOB_horizon, x) -j)), .SDcols = 'cvd_age', by = patid ]
-    cvd_status_glob_hor = data_ext_in_time[ exp_count == 1, lapply(.SD, function(x) ifelse(x <= (j + GLOB_horizon) & x > j & !is.na(x), 1, 0)), .SDcols = 'cvd_age' ]
-    dati_baseline[ patid %in% patid_in_time, 'cvd_status_glob_hor'] = cvd_status_glob_hor# outcome_status_cvd_cumhaz
-    dati_baseline[ patid %in% patid_in_time, 'cvd_age_glob_hor'] = cvd_age_glob_hor$cvd_age #outcome_time_cvd_cumhaz$cvd_age
-    cox_formula_10CVD = as.formula(paste("Surv(cvd_age_glob_hor, cvd_status_glob_hor)~", cox_cov))
-    model_cox_10CVD = coxph(cox_formula_10CVD, data = dati_baseline[lm_subcohort_index == 1,], x = T)
-    base_haz_10CVD = basehaz(model_cox_10CVD, centered = T)
-    cum_haz_est[ 1:dim(base_haz_10CVD)[ 1 ], 1:2 ] = base_haz_10CVD
-    beta_l0_cvd = model_cox_10CVD$coef 
-    
-    save(beta_l0_cvd, file = paste0(out_path,"beta_l0_cvd_outcome_", mod_type, j,"_", gender, ".RData"))
-
-    #Death outcome
-    death_age_glob_hor = data_ext_in_time[ exp_count == 1, lapply(.SD, function(x) ifelse(is.na(x), min(j + GLOB_horizon, end_age) - j, min(j + GLOB_horizon, x) -j)), .SDcols = 'death_age', by = patid ]
-    death_status_glob_hor = data_ext_in_time[ exp_count == 1, lapply(.SD, function(x) ifelse(x <= (j + GLOB_horizon) & x > j & !is.na(x), 1, 0)), .SDcols = 'death_age' ]
-    dati_baseline[ patid %in% patid_in_time, 'death_status_glob_hor'] = death_status_glob_hor# outcome_status_death_cumhaz
-    dati_baseline[ patid %in% patid_in_time, 'death_age_glob_hor'] = death_age_glob_hor$death_age #outcome_time_death_cumhaz$death_age
-    cox_formula_10death = as.formula(paste("Surv(death_age_glob_hor, death_status_glob_hor)~", cox_cov))
-    model_cox_10death = coxph(cox_formula_10death, data = dati_baseline[lm_subcohort_index == 1,], x = T)
-    base_haz_10death = basehaz(model_cox_10death, centered = T)
-    cum_haz_est[ 1:dim(base_haz_10death)[1], 3:4 ] = base_haz_10death
-    beta_l0_death = model_cox_10death$coef 
-    
-    save(beta_l0_death, file = paste0(out_path,"beta_l0_death_outcome_", mod_type, j,"_", gender, ".RData"))
-
-    #Composite outcome
-    death_age_glob_hor = data_ext_in_time[ exp_count == 1, lapply(.SD, function(x) ifelse(is.na(x), min(j + GLOB_horizon, end_age) - j, min(j + GLOB_horizon, x) - j)), .SDcols = 'death_age', by = patid ]
-    death_status_glob_hor = data_ext_in_time[ exp_count == 1, lapply(.SD, function(x) ifelse(x <= (j + GLOB_horizon) & x > j & !is.na(x), 1, 0)), .SDcols = 'death_age' ]
-    
-    composite_age_glob_hor = apply(cbind(cvd_age_glob_hor$cvd_age, death_age_glob_hor$death_age), 1, min)
-    #composite_status_glob_hor = ifelse(cvd_status_glob_hor == 1, 1, ifelse(death_status_glob_hor == 1, 2, 0))
-    composite_status_glob_hor = ifelse(cvd_status_glob_hor == 1 | death_status_glob_hor == 1, 1, 0)
-    
-    
-    dati_baseline[ patid %in% patid_in_time, 'composite_status_glob_hor']  = composite_status_glob_hor 
-    dati_baseline[ patid %in% patid_in_time, 'composite_age_glob_hor']  =  composite_age_glob_hor  
-    cox_formula_10composite = as.formula(paste("Surv(composite_age_glob_hor, composite_status_glob_hor)~", cox_cov))
-    model_cox_10composite = coxph(cox_formula_10composite, data = dati_baseline[lm_subcohort_index == 1,], x = T)
-    base_haz_10composite = basehaz(model_cox_10composite, centered = T)
-    cum_haz_est[ 1:dim(base_haz_10composite)[1], 5:6 ] = base_haz_10composite
-    beta_l0_composite = model_cox_10composite$coef 
-    
-    save(beta_l0_composite, file = paste0(out_path,"beta_l0_composite_outcome_", mod_type, j,"_", gender, ".RData"))
-  }
+  # if(l == 0){
+  #   #CVD outcome
+  #   cvd_age_glob_hor = data_ext_in_time[ exp_count == 1, lapply(.SD, function(x) ifelse(is.na(x), min(j + GLOB_horizon, end_age) - j, min(j + GLOB_horizon, x) -j)), .SDcols = 'cvd_age', by = patid ]
+  #   cvd_status_glob_hor = data_ext_in_time[ exp_count == 1, lapply(.SD, function(x) ifelse(x <= (j + GLOB_horizon) & x > j & !is.na(x), 1, 0)), .SDcols = 'cvd_age' ]
+  #   dati_baseline[ patid %in% patid_in_time, 'cvd_status_glob_hor'] = cvd_status_glob_hor# outcome_status_cvd_cumhaz
+  #   dati_baseline[ patid %in% patid_in_time, 'cvd_age_glob_hor'] = cvd_age_glob_hor$cvd_age #outcome_time_cvd_cumhaz$cvd_age
+  #   cox_formula_10CVD = as.formula(paste("Surv(cvd_age_glob_hor, cvd_status_glob_hor)~", cox_cov))
+  #   model_cox_10CVD = coxph(cox_formula_10CVD, data = dati_baseline[lm_subcohort_index == 1,], x = T)
+  #   base_haz_10CVD = basehaz(model_cox_10CVD, centered = T)
+  #   cum_haz_est[ 1:dim(base_haz_10CVD)[ 1 ], 1:2 ] = base_haz_10CVD
+  #   beta_l0_cvd = model_cox_10CVD$coef 
+  #   
+  #   save(beta_l0_cvd, file = paste0(out_path,"beta_l0_cvd_outcome_", mod_type, j,"_", gender, ".RData"))
+  # 
+  #   #Death outcome
+  #   death_age_glob_hor = data_ext_in_time[ exp_count == 1, lapply(.SD, function(x) ifelse(is.na(x), min(j + GLOB_horizon, end_age) - j, min(j + GLOB_horizon, x) -j)), .SDcols = 'death_age', by = patid ]
+  #   death_status_glob_hor = data_ext_in_time[ exp_count == 1, lapply(.SD, function(x) ifelse(x <= (j + GLOB_horizon) & x > j & !is.na(x), 1, 0)), .SDcols = 'death_age' ]
+  #   dati_baseline[ patid %in% patid_in_time, 'death_status_glob_hor'] = death_status_glob_hor# outcome_status_death_cumhaz
+  #   dati_baseline[ patid %in% patid_in_time, 'death_age_glob_hor'] = death_age_glob_hor$death_age #outcome_time_death_cumhaz$death_age
+  #   cox_formula_10death = as.formula(paste("Surv(death_age_glob_hor, death_status_glob_hor)~", cox_cov))
+  #   model_cox_10death = coxph(cox_formula_10death, data = dati_baseline[lm_subcohort_index == 1,], x = T)
+  #   base_haz_10death = basehaz(model_cox_10death, centered = T)
+  #   cum_haz_est[ 1:dim(base_haz_10death)[1], 3:4 ] = base_haz_10death
+  #   beta_l0_death = model_cox_10death$coef 
+  #   
+  #   save(beta_l0_death, file = paste0(out_path,"beta_l0_death_outcome_", mod_type, j,"_", gender, ".RData"))
+  # 
+  #   #Composite outcome
+  #   death_age_glob_hor = data_ext_in_time[ exp_count == 1, lapply(.SD, function(x) ifelse(is.na(x), min(j + GLOB_horizon, end_age) - j, min(j + GLOB_horizon, x) - j)), .SDcols = 'death_age', by = patid ]
+  #   death_status_glob_hor = data_ext_in_time[ exp_count == 1, lapply(.SD, function(x) ifelse(x <= (j + GLOB_horizon) & x > j & !is.na(x), 1, 0)), .SDcols = 'death_age' ]
+  #   
+  #   composite_age_glob_hor = apply(cbind(cvd_age_glob_hor$cvd_age, death_age_glob_hor$death_age), 1, min)
+  #   #composite_status_glob_hor = ifelse(cvd_status_glob_hor == 1, 1, ifelse(death_status_glob_hor == 1, 2, 0))
+  #   composite_status_glob_hor = ifelse(cvd_status_glob_hor == 1 | death_status_glob_hor == 1, 1, 0)
+  #   
+  #   
+  #   dati_baseline[ patid %in% patid_in_time, 'composite_status_glob_hor']  = composite_status_glob_hor 
+  #   dati_baseline[ patid %in% patid_in_time, 'composite_age_glob_hor']  =  composite_age_glob_hor  
+  #   cox_formula_10composite = as.formula(paste("Surv(composite_age_glob_hor, composite_status_glob_hor)~", cox_cov))
+  #   model_cox_10composite = coxph(cox_formula_10composite, data = dati_baseline[lm_subcohort_index == 1,], x = T)
+  #   base_haz_10composite = basehaz(model_cox_10composite, centered = T)
+  #   cum_haz_est[ 1:dim(base_haz_10composite)[1], 5:6 ] = base_haz_10composite
+  #   beta_l0_composite = model_cox_10composite$coef 
+  #   
+  #   save(beta_l0_composite, file = paste0(out_path,"beta_l0_composite_outcome_", mod_type, j,"_", gender, ".RData"))
+  # }
   
   stopifnot(min(dati_baseline[ patid %in% patid_in_time, time_cvd ]) > 0)
  
   five_year_risk = estimated_surv[ dim(estimated_surv)[1],  ] #selecting the 5-year CVD risk
   risk_prediction[ patid %in% dati_baseline[, patid], paste0("5.y.risk.",l) := five_year_risk  ]
   risk_prediction[ patid %in% dati_baseline[, patid], paste0("5.y.risk.status.",l) := ifelse(five_year_risk <= 0.95, 1, 0) ]
-  hitting_time = apply(estimated_surv, 2, function(x) which(x  <= 0.95)[1] )
+  # hitting_time = apply(estimated_surv, 2, function(x) which(x  <= 0.95)[1] )
 }
 
 

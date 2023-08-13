@@ -24,24 +24,7 @@ load( paste0(in_path, "cum_haz_est_RIRS_",i,"_", gender, ".RData") )
 cum_haz_now = cum_haz_est
 rm( cum_haz_est )
 
-
-load(paste0(in_path,"beta_l0_cvd_outcome_RIRS_",i,"_", gender, ".RData") )
-
 print("ora qui 0")
-
-
-#setting parameters
-# count = 1
-# 
-# bs = 60
-# cv = 20
-# cs = 20
-# theta = 0.8
-# 
-# a_vec = seq(0.25, 10, length.out = 40)
-
-
-
 
 #optimal_matrix = matrix( 0, length(lm_age), 5)
 #comparing_schemes_list = list(NULL)

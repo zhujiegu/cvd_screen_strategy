@@ -19,8 +19,6 @@ library(tidyverse)
 library(haven)
 
 load(paste0(in_path, gender, "/data_lm_",j, "_", gender,".RData"))
-data_ext$derivation <- data_ext$derivation.x
-data_ext <- data_ext[, -c('derivation.x','derivation.y')]
 
 # data_ext <- data_ext[derivation == 'derivation', ]
 
@@ -32,7 +30,7 @@ fit_rirs = lme(scaled_corr ~ 0 + exposure + exp_age_corr:exposure + bp_bin:sbp_i
                 random=~ 0 + exposure + exp_age_corr:exposure|patid,
                 weights=varIdent(form=~1|exposure),
                 data = data_ext,
-                control = lmeControl(maxIter=1000,msMaxIter=1000,msVerbose=TRUE,rel.tol=1e-5,
+                control = lmeControl(maxIter=1000,msMaxIter=1000,msVerbose=TRUE,rel.tol=1e-4,
                                      msMaxEval=1000, niterEM = 50))
 print(Sys.time())
 save(fit_rirs, file = paste0(out_path,j,"_", gender,".RData"))
