@@ -1,9 +1,9 @@
 #!/bin/bash
 
-#SBATCH -J 3-cox
-#SBATCH --time=4:00:00
+#SBATCH -J 4-cstime
+#SBATCH --time=2:00:00
 #SBATCH -p cclake-himem
-#SBATCH -c 4
+#SBATCH -c 2
 #SBATCH --mail-type=ALL
 #SBATCH --array=40-80:5
 
@@ -15,5 +15,5 @@ module purge                               # Removes all modules still loaded
 module load rhel7/default-peta4                   # REQUIRED - loads the basic environment
 module load R/4.2.0
 
-Rscript 3_prediction_Cox_fit_5y_ZG.R $SLURM_ARRAY_TASK_ID "male"
-Rscript 3_prediction_Cox_fit_5y_ZG.R $SLURM_ARRAY_TASK_ID "female"
+Rscript 4_optimal_screening_CVD_ZG.R $SLURM_ARRAY_TASK_ID "male"
+Rscript 4_optimal_screening_CVD_ZG.R $SLURM_ARRAY_TASK_ID "female"

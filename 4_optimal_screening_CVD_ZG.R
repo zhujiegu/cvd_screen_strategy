@@ -30,7 +30,7 @@ print("ora qui 0")
 #comparing_schemes_list = list(NULL)
 #comparing_next_fup_list = list(NULL)
 colnames(risk_pred_now)
-GLOB_horizon = 10
+GLOB_horizon = 8
 
 risk_pred_now$status_cvd_visible = risk_pred_now$cvd_ind
 risk_pred_now$status_cvd_visible[ risk_pred_now$cvd_age > (i + GLOB_horizon + 5) ] = 0 # 14 = 9+5 which is the wider observed time-window.
@@ -47,7 +47,7 @@ risk_pred_now$end_corr = ifelse(is.na( risk_pred_now$cvd_age ), pmin( risk_pred_
 
 
 seq_index_status = grep("y.risk.status.", colnames(risk_pred_now))
-colnames(risk_pred_now)[seq_index_status]= paste0("5.y.status.", 0:10)
+colnames(risk_pred_now)[seq_index_status]= paste0("5.y.status.", 0:GLOB_horizon)
 
 seq_index_status = grep("y.status.", colnames(risk_pred_now))
 seq_index_risk = grep("y.risk.", colnames(risk_pred_now))
@@ -121,8 +121,6 @@ summary(risk_pred_now$`5.y.risk.5`[ which( risk_pred_now$`5.y.risk.5` != 0 ) ])
 summary(risk_pred_now$`5.y.risk.6`[ which( risk_pred_now$`5.y.risk.6` != 0 ) ])
 summary(risk_pred_now$`5.y.risk.7`[ which( risk_pred_now$`5.y.risk.7` != 0 ) ])
 summary(risk_pred_now$`5.y.risk.8`[ which( risk_pred_now$`5.y.risk.8` != 0 ) ])
-summary(risk_pred_now$`5.y.risk.9`[ which( risk_pred_now$`5.y.risk.9` != 0 ) ])
-summary(risk_pred_now$`5.y.risk.10`[ which( risk_pred_now$`5.y.risk.10` != 0 ) ])
 
 
 comparing_schemes <- data.frame(patid = risk_pred_now$patid,
