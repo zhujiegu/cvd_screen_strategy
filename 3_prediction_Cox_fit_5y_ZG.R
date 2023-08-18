@@ -25,6 +25,7 @@ library(riskRegression)
 library(risksetROC)
 library(survAUC)
 library(dynpred)
+library(magrittr)
 
 source("~/epi_paper/mixoutsamp_v3.R")
 source("~/epi_paper/pred_error_check.R")
@@ -32,6 +33,9 @@ source("~/epi_paper/pred_error_check.R")
 load(paste0(in_path, gender, "/data_lm_",j, "_", gender,".RData"))
 mod_type = "RIRS_"
 load(paste0(in_path2,j,"_", gender,".RData"))
+
+# Categorical Townsend
+data_ext$Townsend %<>% factor
 #######################
 #
 # Type of analysis

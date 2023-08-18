@@ -8,10 +8,9 @@ library(openxlsx)
 
 in_path <- '/rds/project/jmmh2/rds-jmmh2-hes_data/electronic_health_records/cprd/DataFiles/analysis/zhujie/3_cox_outp/'
 in_path3 <- '/rds/project/jmmh2/rds-jmmh2-hes_data/electronic_health_records/cprd/DataFiles/analysis/zhujie/4_screening_outp/'
-out_path <- '/rds/project/jmmh2/rds-jmmh2-hes_data/electronic_health_records/cprd/DataFiles/analysis/zhujie/5_crosstime_summary/'
+out_path <- '/home/zg304/epi_paper/5_crosstime_summary/'
 
 lm_age = seq(40,80,5)
-gender = "male" #female or male
 # deriv_tmp = "derivation" #derivation or validation
 ##########################################################
 # INPUT AGE PROPORTION HERE!
@@ -206,29 +205,30 @@ tstar_qt_agg %<>% pivot_longer(cols = starts_with('Q'), names_to = 'Quantile', v
 tstar_qt_agg %<>% mutate_at(vars(risk_class, age_gr, Quantile), factor)
 tstar_qt_agg %>% head
 
-p_qt_female <- ggplot(tstar_qt_agg %>% filter(sex=='female'), aes(x=risk_class, y=value, color=Quantile, group=Quantile))+
-  # geom_line(linetype = 2)+
-  geom_point(aes(shape = Quantile), size=3)+
-  facet_grid(~ age_gr)+
+p_qt_female <- ggplot(tstar_qt_agg %>% filter(sex=='female'), aes(x=risk_class, y=value, color=age_gr, fill=age_gr))+
+  geom_bar(stat='identity', position = 'dodge', width=.6, alpha=0.2)+
+  # geom_point(aes(shape = age_gr), size=3)+
+  facet_grid(~ Quantile)+
   ylab('Time')+
   xlab('Risk class')+
   ggtitle('Quantiles of t* (women)')+
   theme_bw()+
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
 
-p_qt_male <- ggplot(tstar_qt_agg %>% filter(sex=='male'), aes(x=risk_class, y=value, color=Quantile, group=Quantile))+
+p_qt_male <- ggplot(tstar_qt_agg %>% filter(sex=='male'), aes(x=risk_class, y=value, color=age_gr, fill=age_gr))+
+  geom_bar(stat='identity', position = 'dodge', width=.6, alpha=0.2)+
   # geom_line(linetype = 2)+
-  geom_point(aes(shape = Quantile), size=3)+
-  facet_grid(~ age_gr)+
+  # geom_point(aes(shape = Quantile), size=3)+
+  facet_grid(~ Quantile)+
   ylab('Time')+
   xlab('Risk class')+
   ggtitle('Quantiles of t* (men)')+
   theme_bw()+
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
 
-mylegend<-g_legend(p_qt_male)
+mylegend<-g_legend(p_qt_male+ labs(fill="Age", color='Age'))
 
-jpeg(file = '~/epi_paper/outp_figs/t_quantiles.jpeg', units="in", width=6, height=6, res=600)
+jpeg(file = '~/epi_paper/outp_figs/t_quantiles.jpeg', units="in", width=7, height=3, res=600)
 grid.arrange(arrangeGrob(p_qt_female + theme(legend.position="none"),
                          p_qt_male + theme(legend.position="none"), nrow=1, widths=c(1,1)),
              mylegend, ncol=2, widths=c(8,1))
@@ -330,32 +330,34 @@ inneed_table_female$Strategy %<>% factor(levels = names(stg_l$female))
 inneed_table_male$Strategy %<>% factor(levels = names(stg_l$male))
 
 
-p_inneed_male <- ggplot(inneed_table_male, aes(x=risk_class, y=Proportion, color=Strategy, fill=Strategy))+
-  geom_point(aes(shape = Strategy), size=3, alpha=0.8, position=position_jitter(h=0,w=0.2))+
-  scale_shape_manual(values=c(21:24))+
+p_inneed_male <- ggplot(inneed_table_male, aes(x=risk_class, y=Proportion, color=age_gr, fill=age_gr))+
+  geom_bar(stat='identity', position = 'dodge', width=.6, alpha=0.2)+
   # geom_segment(data=filter(inneed_table_male, Strategy=='5-5-5-5'),
   #              aes(x=as.numeric(risk_class)-0.25, xend=as.numeric(risk_class)+0.25, y=Proportion, yend=Proportion))+
-  facet_grid(~ age_gr)+
+  facet_grid(~ Strategy)+
   ylab('Proportion')+
   xlab('Risk class')+
   ggtitle('Proportion of t*<t1 (men)')+
   theme_bw()+
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
 
-p_inneed_female <- ggplot(inneed_table_female, aes(x=risk_class, y=Proportion, color=Strategy, fill=Strategy))+
-  geom_point(aes(shape = Strategy), size=3, alpha=0.8, position=position_jitter(h=0,w=0.2))+
-  scale_shape_manual(values=c(21:24))+
+p_inneed_female <- ggplot(inneed_table_female, aes(x=risk_class, y=Proportion, color=age_gr, fill=age_gr))+
+  geom_bar(stat='identity', position = 'dodge', width=.6, alpha=0.2)+
   # geom_segment(data=filter(inneed_table_female, Strategy=='5-5-5-5'),
   #              aes(x=as.numeric(risk_class)-0.25, xend=as.numeric(risk_class)+0.25, y=Proportion, yend=Proportion))+
-  facet_grid(~ age_gr)+
+  facet_grid(~ Strategy)+
   ylab('Proportion')+
   xlab('Risk class')+
   ggtitle('Proportion of t*<t1 (women)')+
   theme_bw()+
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
 
-jpeg(file = '~/epi_paper/outp_figs/inneed.jpeg', units="in", width=10, height=5, res=600)
-grid.arrange(p_inneed_female, p_inneed_male, ncol=2)
+mylegend<-g_legend(p_inneed_female+ labs(fill="Age", color='Age'))
+
+jpeg(file = '~/epi_paper/outp_figs/inneed.jpeg', units="in", width=8.5, height=3.5, res=600)
+grid.arrange(arrangeGrob(p_inneed_female + theme(legend.position="none"),
+                         p_inneed_male + theme(legend.position="none"), nrow=1, widths=c(1,1)),
+             mylegend, ncol=2, widths=c(8,1))
 dev.off()
 
 #########################################
@@ -451,32 +453,37 @@ wtime_table_female$Strategy %<>% factor(levels = names(stg_l$female))
 wtime_table_male$Strategy %<>% factor(levels = names(stg_l$male))
 
 
-p_wtime_male <- ggplot(wtime_table_male, aes(x=risk_class, y=wait_time, color=Strategy, fill=Strategy))+
-  geom_point(aes(shape = Strategy), size=3, alpha=0.8, position=position_jitter(h=0,w=0.2))+
-  scale_shape_manual(values=c(21:24))+
+p_wtime_male <- ggplot(wtime_table_male, aes(x=risk_class, y=wait_time, color=age_gr, fill=age_gr))+
+  geom_bar(stat='identity', position = 'dodge', width=.6, alpha=0.2)+
+  # geom_point(aes(shape = Strategy), size=3, alpha=0.8, position=position_jitter(h=0,w=0.2))+
+  # scale_shape_manual(values=c(21:24))+
   # geom_segment(data=filter(wtime_table_male, Strategy=='5-5-5-5'),
   #              aes(x=as.numeric(risk_class)-0.25, xend=as.numeric(risk_class)+0.25, y=wtimeortion, yend=wtimeortion))+
-  facet_grid(~ age_gr)+
+  facet_grid(~ Strategy)+
   ylab('Waiting time')+
   xlab('Risk class')+
   ggtitle('Average waiting time given t*<t1 (men)')+
   theme_bw()+
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
 
-p_wtime_female <- ggplot(wtime_table_female, aes(x=risk_class, y=wait_time, color=Strategy, fill=Strategy))+
-  geom_point(aes(shape = Strategy), size=3, alpha=0.8, position=position_jitter(h=0,w=0.2))+
-  scale_shape_manual(values=c(21:24))+
+p_wtime_female <- ggplot(wtime_table_female, aes(x=risk_class, y=wait_time, color=age_gr, fill=age_gr))+
+  geom_bar(stat='identity', position = 'dodge', width=.6, alpha=0.2)+
+  # scale_shape_manual(values=c(21:24))+
   # geom_segment(data=filter(wtime_table_female, Strategy=='5-5-5-5'),
   #              aes(x=as.numeric(risk_class)-0.25, xend=as.numeric(risk_class)+0.25, y=wtimeortion, yend=wtimeortion))+
-  facet_grid(~ age_gr)+
+  facet_grid(~ Strategy)+
   ylab('Waiting time')+
   xlab('Risk class')+
   ggtitle('Average waiting time given t*<t1 (women)')+
   theme_bw()+
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
 
-jpeg(file = '~/epi_paper/outp_figs/wtime.jpeg', units="in", width=10, height=5, res=600)
-grid.arrange(p_wtime_female, p_wtime_male, ncol=2)
+mylegend<-g_legend(p_wtime_female+ labs(fill="Age", color='Age'))
+
+jpeg(file = '~/epi_paper/outp_figs/wtime.jpeg', units="in", width=8.5, height=3.5, res=600)
+grid.arrange(arrangeGrob(p_wtime_female + theme(legend.position="none"),
+                         p_wtime_male + theme(legend.position="none"), nrow=1, widths=c(1,1)),
+             mylegend, ncol=2, widths=c(8,1))
 dev.off()
 
 #########################################

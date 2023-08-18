@@ -158,6 +158,8 @@ data_ext[ ,depression_age := ifelse( is.na( depression_date ), NA, ( depression_
 
 #imputing !!!!!!!!!!!!!!!!!!!!!!!!
 data_ext$Townsend[ which( is.na( data_ext$Townsend ) ) ] = median( data_ext$Townsend, na.rm = T )
+# Categorical Townsend
+data_ext$Townsend %<>% factor
 
 #family hisotry 
 data_ext[ ,family_history := 0 ]

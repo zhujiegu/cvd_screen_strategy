@@ -4,7 +4,10 @@ library(gridExtra)
 library(magrittr)
 library(scales)
 library(RColorBrewer)
+library(nlme)
 library(dplyr)
+library(survival)
+
 summarize <- dplyr::summarize
 select <- dplyr::select
 
@@ -12,7 +15,7 @@ in_path2 <- '/rds/project/jmmh2/rds-jmmh2-hes_data/electronic_health_records/cpr
 in_path <- '/rds/project/jmmh2/rds-jmmh2-hes_data/electronic_health_records/cprd/DataFiles/analysis/zhujie/3_cox_outp/'
 
 lm_age = seq(40,80,5)
-gender = "male" #female or male
+# gender = "male" #female or male
 
 ##########################################################
 # LMEM
@@ -36,6 +39,8 @@ for( gender in c("female", "male")){
   }
 }
 
+beta_LMEM %<>% mutate(sex=ifelse(sex=='male', 'Men', 'Women'))
+beta_LMEM$sex %<>%  factor(levels = c('Women','Men'))
 
 #Fixed Intercepts
 int_BMI = ggplot( subset( beta_LMEM, var %in% c( "exposurebmi" ) ), aes( x = lm_age, y = fitted_val, col = sex)) +
@@ -184,8 +189,8 @@ for( gender in c("female", "male")){
   }
 }
 
-
-rownames(beta_5_cox)
+beta_5_cox %<>% mutate(sex=ifelse(sex=='male', 'Men', 'Women'))
+beta_5_cox$sex %<>%  factor(levels = c('Women','Men'))
 
 #TIME DEPENDENT VARIABLES
 
@@ -259,9 +264,36 @@ ggsave(final_plot_beta_cox_time_dep, file = paste0( "~/epi_paper/outp_figs/beta_
 
 #TIME FIXED covariates
 #townsend
-townsend = ggplot( beta_5_cox[ grep("Townsend", rownames(beta_5_cox) ), ], aes(x = lm_age_j, y = exp_var, col = factor(lm_age)) ) +
+townsend2 = ggplot( beta_5_cox[ grep("Townsend2", rownames(beta_5_cox) ), ], aes(x = lm_age_j, y = exp_var, col = factor(lm_age)) ) +
   geom_pointrange(aes(ymin = lower, ymax = upper)) +
-  labs( x = "Landmark age", y = "HR - Townsend", col = "Risk class") +
+  labs( x = "Landmark age", y = "HR - Townsend2", col = "Risk class") +
+  lims( x = c(40,90))+
+  geom_hline( yintercept = 1, col = 1) +
+  theme_bw() +
+  theme(legend.position = "top", legend.box = "horizontal", legend.title = element_blank(), legend.text = element_text(size = 12)) +
+  guides(color = guide_legend(nrow = 1))+
+  facet_grid(rows = vars(sex))
+townsend3 = ggplot( beta_5_cox[ grep("Townsend3", rownames(beta_5_cox) ), ], aes(x = lm_age_j, y = exp_var, col = factor(lm_age)) ) +
+  geom_pointrange(aes(ymin = lower, ymax = upper)) +
+  labs( x = "Landmark age", y = "HR - Townsend3", col = "Risk class") +
+  lims( x = c(40,90))+
+  geom_hline( yintercept = 1, col = 1) +
+  theme_bw() +
+  theme(legend.position = "top", legend.box = "horizontal", legend.title = element_blank(), legend.text = element_text(size = 12)) +
+  guides(color = guide_legend(nrow = 1))+
+  facet_grid(rows = vars(sex))
+townsend4 = ggplot( beta_5_cox[ grep("Townsend4", rownames(beta_5_cox) ), ], aes(x = lm_age_j, y = exp_var, col = factor(lm_age)) ) +
+  geom_pointrange(aes(ymin = lower, ymax = upper)) +
+  labs( x = "Landmark age", y = "HR - Townsend4", col = "Risk class") +
+  lims( x = c(40,90))+
+  geom_hline( yintercept = 1, col = 1) +
+  theme_bw() +
+  theme(legend.position = "top", legend.box = "horizontal", legend.title = element_blank(), legend.text = element_text(size = 12)) +
+  guides(color = guide_legend(nrow = 1))+
+  facet_grid(rows = vars(sex))
+townsend5 = ggplot( beta_5_cox[ grep("Townsend5", rownames(beta_5_cox) ), ], aes(x = lm_age_j, y = exp_var, col = factor(lm_age)) ) +
+  geom_pointrange(aes(ymin = lower, ymax = upper)) +
+  labs( x = "Landmark age", y = "HR - Townsend5", col = "Risk class") +
   lims( x = c(40,90))+
   geom_hline( yintercept = 1, col = 1) +
   theme_bw() +
@@ -326,10 +358,20 @@ Migraine = ggplot( beta_5_cox[ grep("Migraine", rownames(beta_5_cox) ), ], aes(x
   facet_grid(rows = vars(sex))
 #ggsave(Migraine, file = paste0( "img_epi_paper/beta_cox_Migraine.jpeg" ), width = 15, height = 15, unit = "cm"  )
 
-shared_legend_time_fixed1 = cowplot::get_legend( townsend )
+shared_legend_time_fixed1 = cowplot::get_legend( townsend2 )
 
-all_beta_cox_time_fixed1 = cowplot::plot_grid(townsend + theme(legend.position = "none"),
-                                           bp_bin, diab, depression, Migraine, Severe_mental, align = 'h',  labels=c('A', 'B','C', 'D', 'E',  'F'), ncol = 2, nrow = 4, rel_heights = c(1,1,1,0.2))
+all_beta_cox_time_fixed1 = cowplot::plot_grid(townsend2 + theme(legend.position = "none"),
+                                              townsend3 + theme(legend.position = "none"),
+                                              townsend4 + theme(legend.position = "none"),
+                                              townsend5 + theme(legend.position = "none"),
+                                              bp_bin, 
+                                              diab, 
+                                              depression, 
+                                              Migraine, 
+                                              Severe_mental, 
+                                              align = 'h',  
+                                              labels=c('A', 'B','C', 'D', 'E',  'F','G','H','I'), ncol = 2, nrow = 6, 
+                                              rel_heights = c(1,1,1,1,1,0.2))
 
 final_plot_beta_cox_time_fixed1 = all_beta_cox_time_fixed1 + cowplot::draw_grob(shared_legend_time_fixed1, 1.2/3.3, -0.48, 1.0/3.3, 1)
 
