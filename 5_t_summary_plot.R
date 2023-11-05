@@ -5,6 +5,9 @@ library(magrittr)
 library(scales)
 library(dplyr)
 library(openxlsx)
+library(grid)
+library(ggnewscale)
+library(wesanderson)
 
 in_path <- '/rds/project/jmmh2/rds-jmmh2-hes_data/electronic_health_records/cprd/DataFiles/analysis/zhujie/3_cox_outp/'
 in_path3 <- '/rds/project/jmmh2/rds-jmmh2-hes_data/electronic_health_records/cprd/DataFiles/analysis/zhujie/4_screening_outp/'
@@ -46,9 +49,9 @@ tstar$delta = tstar$pred_time-tstar$lm_age
 
 # Proportion that did not cross the threshold in 8 years
 tstar %<>% mutate(pred_status = replace(pred_status, delta > 8, 0))
-levels(tstar$risk_class) <- c('Very_high','High','Medium_high',
-                              'Medium_low','Low')
-# levels(tstar$risk_class) <- c('Very_high(>5%)','High(3.75%-5%)','Medium_high(2.5%-3.75%)',
+levels(tstar$risk_class) <- c('dark_red','red','orange',
+                              'yellow','green')
+# levels(tstar$risk_class) <- c('dark_red(>5%)','High(3.75%-5%)','Medium_high(2.5%-3.75%)',
 #                                        'Medium_low(1.25%-2.5%)','Low(<1.25%)')
 g_legend<-function(a.gplot){
   tmp <- ggplot_gtable(ggplot_build(a.gplot))
@@ -72,25 +75,37 @@ N_cross_riskgr$pred_status <- N_cross_riskgr$pred_status==1
 colnames(N_cross_riskgr)[4] <- 'crossed'
 
 N_cross_riskgr
-N_cross_riskgr %>% filter(risk_class=='Very_high') %>% filter(sex=='male')
+N_cross_riskgr %>% filter(risk_class=='dark_red') %>% filter(sex=='male')
 # write.csv(N_cross_riskgr, file = '~/epi_paper/riskgr_pct.csv')
 riskgr_pct <- N_cross_riskgr %>% select(lm_age,sex,risk_class,riskgr_pct_total) %>% unique
 
 ##############################################################################
 # tstar plot
 ##############################################################################
-tstar_crossed = tstar %>% filter(pred_status==1) %>% filter(risk_class != 'Very_high') %>% 
+tstar_crossed = tstar %>% filter(pred_status==1) %>% filter(risk_class != 'dark_red') %>% 
   group_by(lm_age, sex, risk_class) %>% mutate(mean = mean(delta)) %>% ungroup
 # ggplot(tstar_crossed, aes(x=delta, color=risk_class, fill = risk_class)) +
 #   geom_density(alpha = 0.2)
 
-tstar_all <- tstar %>% filter(risk_class != 'Very_high') %>% group_by(lm_age, sex, risk_class) %>% 
+tstar_all <- tstar %>% filter(risk_class != 'dark_red') %>% group_by(lm_age, sex, risk_class) %>% 
   mutate(delta = ifelse(pred_status==1, delta, 8)) %>% mutate(mean = mean(delta)) %>% ungroup
 
 N_tstar_all <- tstar_all %>% 
   group_by(lm_age, sex, risk_class) %>% summarize(Total = n())
 
-risk_gr_colors <- c("red4", "red","darkorange", "royalblue3", "springgreen3")
+cross_riskgr_pct <- N_cross_riskgr %>% select(lm_age, sex, risk_class, crossed, cross_pct) %>% filter(risk_class!='dark_red')
+cross_riskgr_pct <- cross_riskgr_pct %>%  # Group by lm_age, sex, and risk_class to ensure we consider each combination
+  group_by(lm_age, sex, risk_class) %>%
+  # Complete the dataset for crossed within each group
+  complete(crossed = c(TRUE, FALSE), fill = list(cross_pct = NA)) %>%
+  # Ensure that cross_pct for TRUE and FALSE adds up to 1
+  mutate(cross_pct = ifelse(is.na(cross_pct), 1 - sum(cross_pct, na.rm = TRUE), cross_pct)) %>%
+  # Ungroup to avoid grouping-related issues later on
+  ungroup()
+cross_riskgr_pct$risk_class <- droplevels(cross_riskgr_pct$risk_class)
+
+
+risk_gr_colors <- c("red4", "red","darkorange", "#ffd200", "springgreen3")
 names(risk_gr_colors)<- N_cross_riskgr$risk_class %>% levels
 
 # keep empty facet rows to be comparable
@@ -102,8 +117,6 @@ N_tstar_all$risk_class <- droplevels(N_tstar_all$risk_class)
 p_tstar_plot <- function(gender, risk_labels){
   ggplot(tstar_all %>% filter(sex==gender), aes(x=delta, color=risk_class, fill = risk_class)) + 
     geom_histogram(alpha = 0.2,  position = 'identity', breaks=seq(0,9,by=1), closed='left', aes(y = ..density..)) +
-    geom_vline(aes(xintercept=mean, color='black'), linetype = "dashed") +
-    geom_vline(aes(xintercept=8), linetype = "solid") +
     # scale_y_cut(breaks=c(5000, 10000), which=c(1, 3), scales=c(0.01, 1)) +
     # geom_text(aes(label=mean, y=Inf), color="black", angle=90, size=2, vjust = 0.1) +
     facet_grid(lm_age~risk_class, drop=F) +
@@ -115,13 +128,18 @@ p_tstar_plot <- function(gender, risk_labels){
     # ggtitle(paste('Years to cross for people who crossed (males)')) +
     scale_color_manual(values=risk_gr_colors[-1], labels=risk_labels) +
     scale_fill_manual(values=risk_gr_colors[-1], labels=risk_labels) +
+    geom_vline(aes(xintercept=mean, color=risk_class), linetype = "dashed") +
+    new_scale_color() +
+    geom_vline(aes(xintercept=8), linetype = "solid") +
     geom_text(data = N_tstar_all %>% filter(sex==gender), 
               aes(x = 4, y = 0.9, label = paste0('n=', Total)), size = 3) +
+    geom_text(data = cross_riskgr_pct %>% filter(sex==gender, crossed==FALSE),
+              aes(x = 4, y = 0.75, label = paste0(sprintf("%.1f",round(cross_pct *100, digits = 1)), '% >8')), size = 3) +
     theme_bw()+
     theme(legend.position="bottom")
 } 
 
-risk_labels <- c('High(3.75%-5%)','Medium_high(2.5%-3.75%)', 'Medium_low(1.25%-2.5%)','Low(<1.25%)')
+risk_labels <- c('red(3.75%-5%)','orange(2.5%-3.75%)', 'yellow(1.25%-2.5%)','green(<1.25%)')
 p_tstar_female <- p_tstar_plot('female', risk_labels)
 p_tstar_male <- p_tstar_plot('male', risk_labels)
 
@@ -162,7 +180,7 @@ dev.off()
 ##############################################################################
 # remove male 65 medium low where only 1 sample available
 ##############################################################################
-tstar %<>% filter(sex!='male'|lm_age!=65|risk_class!='Medium_low')
+tstar %<>% filter(sex!='male'|lm_age!=65|risk_class!='yellow')
 riskgr_pct <- tstar %>% 
   group_by(lm_age, sex, risk_class, pred_status) %>% summarize(Total = n()) %>% 
   group_by(lm_age, sex) %>% mutate(N = sum(Total), riskgr_pct = Total/sum(Total)) %>% 
@@ -170,14 +188,21 @@ riskgr_pct <- tstar %>%
                                                cross_pct = Total/sum(Total)) %>% 
   select(lm_age,sex,risk_class, riskgr_pct_total) %>% unique
 
+weight <- merge(riskgr_pct, age_proportion)
+weight_all <- weight %>% mutate(w=riskgr_pct_total*n) %>% group_by(sex, risk_class) %>% summarise(N_riskgr=sum(w)) %>% 
+  mutate(age_gr='All')
+weight_str <- weight %>% mutate(w=riskgr_pct_total*n) %>% mutate(age_gr = ifelse(lm_age<65, '<65', '>=65')) %>% 
+  group_by(sex, risk_class, age_gr) %>% summarise(N_riskgr=sum(w))
+weight <- rbind(weight_all, weight_str)
 ##############################################################################
 # Quantile plot
 ##############################################################################
-tstar_qt = tstar %>% filter(risk_class != 'Very_high') %>% 
+tstar_qt = tstar %>% filter(risk_class != 'dark_red') %>% 
   mutate(delta = ifelse(pred_status==1, delta, 8)) %>% 
   group_by(sex, lm_age, risk_class) %>% summarise(mean = mean(delta), Q50 = quantile(delta, probs=0.5),
                                                   Q25 = quantile(delta, probs=0.25),Q10 = quantile(delta, probs=0.1),
                                                   Q05 = quantile(delta, probs=0.05)) %>% ungroup
+write.xlsx(tstar_qt, file = '~/epi_paper/5_crosstime_summary/tstar_qt.xlsx')
 
 tstar_qt <- merge(tstar_qt, riskgr_pct)
 tstar_qt <- merge(tstar_qt, age_proportion)
@@ -206,68 +231,173 @@ tstar_qt_agg %<>% mutate_at(vars(risk_class, age_gr, Quantile), factor)
 tstar_qt_agg %>% head
 
 p_qt_female <- ggplot(tstar_qt_agg %>% filter(sex=='female'), aes(x=risk_class, y=value, color=age_gr, fill=age_gr))+
-  geom_bar(stat='identity', position = 'dodge', width=.6, alpha=0.2)+
-  # geom_point(aes(shape = age_gr), size=3)+
+  geom_bar(stat='identity', position = 'dodge', width=.6, alpha=0.3)+
   facet_grid(~ Quantile)+
   ylab('Time')+
-  xlab('Risk class')+
-  ggtitle('Quantiles of t* (women)')+
+  xlab('Risk group')+
+  ggtitle('Women')+
   theme_bw()+
-  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+  scale_color_manual(values = wes_palette("Moonrise3", n = 3)) +
+  scale_fill_manual(values = wes_palette("Moonrise3", n = 3)) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+ 
+  labs(fill="Age", color='Age') +
+  # Change the y-axis breaks so the top break is "8+"
+  scale_y_continuous(breaks = c(0, 2, 4, 6, 8), labels = c("0", "2", "4", "6", "8+")) 
+
+arrows_df <- tstar_qt_agg %>% 
+  filter(sex == 'female', value == 8)
+
+# Dodge width for arrows
+dodge_width <- 0.6 / length(unique(tstar_qt_agg$age_gr))
+
+p_qt_female <- p_qt_female + geom_segment(data = arrows_df,
+                           aes(x = as.numeric(risk_class) - 0.2 + (as.numeric(age_gr) - 1) * dodge_width, 
+                               xend = as.numeric(risk_class) - 0.2 + (as.numeric(age_gr) - 1) * dodge_width,
+                               y = 8, yend = 8.5, group = age_gr, color=age_gr),
+                           arrow = arrow(length = unit(2, "mm")), linewidth = 0.5, inherit.aes = FALSE)
+
 
 p_qt_male <- ggplot(tstar_qt_agg %>% filter(sex=='male'), aes(x=risk_class, y=value, color=age_gr, fill=age_gr))+
-  geom_bar(stat='identity', position = 'dodge', width=.6, alpha=0.2)+
+  geom_bar(stat='identity', position = 'dodge', width=.6, alpha=0.3)+
   # geom_line(linetype = 2)+
   # geom_point(aes(shape = Quantile), size=3)+
   facet_grid(~ Quantile)+
   ylab('Time')+
-  xlab('Risk class')+
-  ggtitle('Quantiles of t* (men)')+
+  xlab('Risk group')+
+  ggtitle('Men')+
   theme_bw()+
-  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+  scale_color_manual(values = wes_palette("Moonrise3", n = 3)) +
+  scale_fill_manual(values = wes_palette("Moonrise3", n = 3)) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+ 
+  labs(fill="Age", color='Age') +
+  # Change the y-axis breaks so the top break is "8+"
+  scale_y_continuous(breaks = c(0, 2, 4, 6, 8), labels = c("0", "2", "4", "6", "8+")) 
 
-mylegend<-g_legend(p_qt_male+ labs(fill="Age", color='Age'))
+arrows_df <- tstar_qt_agg %>% 
+  filter(sex == 'male', value == 8)
 
-jpeg(file = '~/epi_paper/outp_figs/t_quantiles.jpeg', units="in", width=7, height=3, res=600)
-grid.arrange(arrangeGrob(p_qt_female + theme(legend.position="none"),
-                         p_qt_male + theme(legend.position="none"), nrow=1, widths=c(1,1)),
-             mylegend, ncol=2, widths=c(8,1))
+# Dodge width for arrows
+dodge_width <- 0.6 / length(unique(tstar_qt_agg$age_gr))
+
+p_qt_male <- p_qt_male + geom_segment(data = arrows_df,
+                                          aes(x = as.numeric(risk_class) - 0.2 + (as.numeric(age_gr) - 1) * dodge_width, 
+                                              xend = as.numeric(risk_class) - 0.2 + (as.numeric(age_gr) - 1) * dodge_width,
+                                              y = 8, yend = 8.5, group = age_gr, color=age_gr),
+                                          arrow = arrow(length = unit(2, "mm")), linewidth = 0.5, inherit.aes = FALSE)
+
+# mylegend<-g_legend(p_qt_male+ labs(fill="Age", color='Age'))
+
+jpeg(file = '~/epi_paper/outp_figs/t_quantiles.jpeg', units="in", width=8.5, height=6.5, res=600)
+grid.arrange(p_qt_female, p_qt_male, nrow=2, heights=c(1,1),
+             top=textGrob('Aggregated quantiles of t*', gp=gpar(fontsize=18,font=8)))
+# grid.arrange(arrangeGrob(p_qt_female + theme(legend.position="none"),
+#                          p_qt_male + theme(legend.position="none"), nrow=1, widths=c(1,1)),
+#              mylegend, ncol=2, widths=c(8,1))
 dev.off()
 ##############################################################################
 # Strategies
 ##############################################################################
 # based on Q50
-tstar_qt_agg %>% filter(Quantile=='Q50', age_gr=='All') #
+tstar_qt_agg %>% filter(Quantile=='Q50', age_gr=='All') 
+tstar_qt_agg %>% filter(Quantile=='Q50', age_gr!='All') #age stratified
+
+# based on Q25
+tstar_qt_agg %>% filter(Quantile=='Q25', age_gr=='All') 
+tstar_qt_agg %>% filter(Quantile=='Q25', age_gr!='All') #age stratified
 
 # based on Q10
-tstar_qt_agg %>% filter(Quantile=='Q10', age_gr=='All') #4
-# age stratified
-tstar_qt_agg %>% filter(Quantile=='Q10', age_gr!='All') #
+tstar_qt_agg %>% filter(Quantile=='Q10', age_gr=='All') 
+tstar_qt_agg %>% filter(Quantile=='Q10', age_gr!='All') 
 
-stg_l <- list('female'=list('5-5-5-5'=rep(5,8),
-                            '2-6-8-8'=c(2,2,6,6,8,8,8,8),
-                            '1-4-8-8'=c(1,1,4,4,8,8,8,8),
-                            '1-5(3)-8(6)-8'=c(1,1,5,3,8,6,8,8)),
-              'male'=list('5-5-5-5'=rep(5,8),
-                            '2-5-8-8'=c(2,2,5,5,8,8,8,8),
-                            '1-4-8-8'=c(1,1,4,4,8,8,8,8),
-                            '1-4(2)-8-8'=c(1,1,4,2,8,8,8,8)))
+# based on Q05
+tstar_qt_agg %>% filter(Quantile=='Q05', age_gr=='All') 
+tstar_qt_agg %>% filter(Quantile=='Q05', age_gr!='All') 
+
+stg_l <- list('female'=list('5-5-5-5'=rep(5,8), # Benchmark Non-stratified
+                            '2-6-8-8'=c(2,2,6,6,8,8,8,8), #Q50 Non-stratified
+                            '3(2)-7(5)-8(7)-8'=c(3,2,7,5,8,7,8,8), #Q50 age-stratified
+                            '1-5-8-8'=c(1,1,5,5,8,8,8,8), #Q25 Non-stratified
+                            '2(1)-6(4)-8(7)-8'=c(2,1,6,4,8,7,8,8), #Q25 age-stratified
+                            '1-4-8-8'=c(1,1,4,4,8,8,8,8), #Q10 Non-stratified #Q05 Non-stratified
+                            '1-5(3)-8(6)-8'=c(1,1,5,3,8,6,8,8), #Q10 age-stratified
+                            '1-4(3)-8(6)-8'=c(1,1,4,3,8,6,8,8)), #Q05 age-stratified
+              'male'=list('5-5-5-5'=rep(5,8), # Benchmark Non-stratified
+                          '2-5-8-8'=c(2,2,5,5,8,8,8,8), #Q50 Non-stratified
+                          '2(1)-5(3)-8-8'=c(2,1,5,3,8,8,8,8), #Q50 age-stratified
+                          '1-4-8-8'=c(1,1,4,4,8,8,8,8), #Q25, #Q10 Non-stratified
+                          '1-4(2)-8-8'=c(1,1,4,2,8,8,8,8), #Q25 age-stratified, #Q10 age-stratified
+                          '1-3-7-8'=c(1,1,3,3,7,7,8,8), #Q05 Non-stratified
+                          '1-3(2)-7-8'=c(1,1,3,2,7,7,8,8))) #Q05 age-stratified
+
+str_type <- expand.grid(Quantile = c('Q50','Q25','Q10','Q05'), Stratified= c('Non-stratified', 'Age-stratified'), 
+                        Sex=c('female','male'))
+
+
+# Create a data frame based on stg_l (modified manually from output of ChatGPT, check!)
+strategies_df <- data.frame(
+  sex = rep(c("female", "male"), each = 9),
+  quantile = rep(c("Benchmark", "Q50", "Q50", "Q25", "Q25", "Q10", "Q10", "Q05", "Q05"),2),
+  stratified = rep(c("Non-stratified", rep(c("Non-stratified", "Age-stratified"),4)), 2),
+  Strategy = c("5-5-5-5", "2-6-8-8", "3(2)-7(5)-8(7)-8", "1-5-8-8", "2(1)-6(4)-8(7)-8", 
+               "1-4-8-8", "1-5(3)-8(6)-8","1-4-8-8", "1-4(3)-8(6)-8",
+               "5-5-5-5", "2-5-8-8", "2(1)-5(3)-8-8", "1-4-8-8", "1-4(2)-8-8", "1-4-8-8","1-4(2)-8-8",
+               "1-3-7-8", "1-3(2)-7-8"),
+  stringsAsFactors = FALSE
+)
+strategies_df
+
+
+#########################################
+# Number of assessments needed per i
+#########################################
+nb_ass <- function(stg, gender){
+  weight <- merge(riskgr_pct, age_proportion)
+  weight %<>% mutate(w=riskgr_pct_total*n)
+  weight %<>% mutate(age_gr = ifelse(lm_age<65, '<65', '>=65'))
+  
+  if(gender!='both'){
+    stg_ <- tibble(age_gr=rep(c('<65', '>=65'),4), 
+                   risk_class=rep(c('red', 'orange', 'yellow', 'green'), each=2),
+                   int=stg)
+    stg_ <- merge(stg_, weight)
+    # aggregation 2 age groups
+    nb_agg <- stg_ %>% filter(sex%in%gender) %>% summarise(nb = sum((8/int)*w)/sum(w))
+    return(nb_agg)
+  }else{
+    stg_ <- tibble(age_gr=rep(c('<65', '>=65'),8), 
+                   risk_class=rep(rep(c('red', 'orange', 'yellow', 'green'), each=2),2),
+                   sex=rep(c('female','male'), each=8),
+                   int=c(stg$female, stg$male))
+    stg_ <- merge(stg_, weight)
+    # aggregation 2 age groups
+    nb_agg <- stg_ %>% summarise(nb = sum((8/int)*w)/sum(w))
+    return(nb_agg)
+  }
+}
+# Sex specific
+lapply(stg_l$female, function(e) nb_ass(e, 'female'))
+lapply(stg_l$male, function(e) nb_ass(e, 'male'))
+# Combined sex (set gender to 'both', input stg as a list (sublist name 'female' and 'male'))
+nb_ass(list('female'=stg_l$female$`2-6-8-8`, 'male'=stg_l$male$`2-5-8-8`), gender = 'both')
+
+
+
 #########################################
 # Proportion of t* < first assessment
 #########################################
 # input strategy, a vector of length length 8 for low(<65), low(>=65), ... high(>=65)
 prop_inneed <- function(stg){
-  prop = tstar %>% filter(risk_class != 'Very_high') %>% 
+  prop = tstar %>% filter(risk_class != 'dark_red') %>% 
     mutate(delta = ifelse(pred_status==1, delta, 8)) %>% 
     group_by(sex, lm_age, risk_class) %>% 
-    summarise(mean = mean(delta <= case_when(risk_class == 'High' & lm_age<65 ~ stg[1],
-                                             risk_class == 'High' & lm_age>=65 ~ stg[2],
-                                             risk_class == 'Medium_high' & lm_age<65 ~ stg[3],
-                                             risk_class == 'Medium_high' & lm_age>=65 ~ stg[4],
-                                             risk_class == 'Medium_low' & lm_age<65 ~ stg[5],
-                                             risk_class == 'Medium_low' & lm_age>=65 ~ stg[6],
-                                             risk_class == 'Low' & lm_age<65 ~ stg[7],
-                                             risk_class == 'Low' & lm_age>=65 ~ stg[8]))) %>% 
+    summarise(mean = mean(delta < case_when(risk_class == 'red' & lm_age<65 ~ stg[1],
+                                             risk_class == 'red' & lm_age>=65 ~ stg[2],
+                                             risk_class == 'orange' & lm_age<65 ~ stg[3],
+                                             risk_class == 'orange' & lm_age>=65 ~ stg[4],
+                                             risk_class == 'yellow' & lm_age<65 ~ stg[5],
+                                             risk_class == 'yellow' & lm_age>=65 ~ stg[6],
+                                             risk_class == 'green' & lm_age<65 ~ stg[7],
+                                             risk_class == 'green' & lm_age>=65 ~ stg[8]))) %>% 
     ungroup %>% pivot_wider(names_from = risk_class, values_from = mean)
   return(prop)
 }
@@ -275,7 +405,7 @@ prop_inneed <- function(stg){
 eff_tables <- function(stg, gender){
   prop <- prop_inneed(stg) %>% filter(sex==gender)
   # write.csv(prop_, file = paste0(out_path, 'prop_inneed_',paste0(stg, collapse = ''),'.csv'))
-  prop_ <- prop %>% pivot_longer(cols = High:Low, names_to = 'risk_class', values_to = 'Proportion') 
+  prop_ <- prop %>% pivot_longer(cols = red:green, names_to = 'risk_class', values_to = 'Proportion') 
   
   prop_ <- merge(prop_, riskgr_pct)
   prop_ <- merge(prop_, age_proportion)
@@ -291,7 +421,7 @@ eff_tables <- function(stg, gender){
     mutate(age_gr='All') %>% select(-lm_age,-riskgr_pct_total,-n,-w) %>% unique
   
   prop_agg <- rbind(prop_agg, prop_agg2)
-  prop_agg$risk_class %<>% factor(levels = c('High', 'Medium_high', 'Medium_low', 'Low'))
+  prop_agg$risk_class %<>% factor(levels = c('red', 'orange', 'yellow', 'green'))
   prop_agg$age_gr %<>% factor
   return(list(prop = prop, prop_agg=prop_agg))
 }
@@ -326,64 +456,91 @@ inneed_table_female <- do.call(rbind, lapply(names(inneed_table_female),
                                              function(e) inneed_table_female[[e]] %>% mutate(Strategy = e)))
 inneed_table_male <- do.call(rbind, lapply(names(inneed_table_male), 
                                              function(e) inneed_table_male[[e]] %>% mutate(Strategy = e)))
+
+inneed_table_female <- strategies_df %>% filter(sex=='female') %>% select(-sex) %>% merge(inneed_table_female)
+inneed_table_male <- strategies_df %>% filter(sex=='male') %>% select(-sex) %>% merge(inneed_table_male)
+
+inneed_table_female$quantile %<>% factor(levels = c('Benchmark','Q50','Q25','Q10','Q05'))
+inneed_table_male$quantile %<>% factor(levels = c('Benchmark','Q50','Q25','Q10','Q05'))
+inneed_table_female$stratified %<>% factor(levels = c('Non-stratified','Age-stratified'))
+inneed_table_male$stratified %<>% factor(levels = c('Non-stratified','Age-stratified'))
 inneed_table_female$Strategy %<>% factor(levels = names(stg_l$female))
 inneed_table_male$Strategy %<>% factor(levels = names(stg_l$male))
 
 
 p_inneed_male <- ggplot(inneed_table_male, aes(x=risk_class, y=Proportion, color=age_gr, fill=age_gr))+
-  geom_bar(stat='identity', position = 'dodge', width=.6, alpha=0.2)+
+  geom_bar(stat='identity', position = 'dodge', width=.6, alpha=0.4)+
   # geom_segment(data=filter(inneed_table_male, Strategy=='5-5-5-5'),
   #              aes(x=as.numeric(risk_class)-0.25, xend=as.numeric(risk_class)+0.25, y=Proportion, yend=Proportion))+
-  facet_grid(~ Strategy)+
+  facet_grid(stratified~quantile)+
   ylab('Proportion')+
-  xlab('Risk class')+
-  ggtitle('Proportion of t*<t1 (men)')+
+  xlab('Risk group')+
+  ggtitle('Men')+
   theme_bw()+
-  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+  scale_color_manual(values = wes_palette("Moonrise3", n = 3))+
+  scale_fill_manual(values = wes_palette("Moonrise3", n = 3))+
+  new_scale_color()+new_scale_fill()+
+  geom_text(aes(x = 3, y = 1, label = paste0(Strategy)), size = 3) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+ 
+  labs(fill="Age", color='Age')
 
 p_inneed_female <- ggplot(inneed_table_female, aes(x=risk_class, y=Proportion, color=age_gr, fill=age_gr))+
-  geom_bar(stat='identity', position = 'dodge', width=.6, alpha=0.2)+
+  geom_bar(stat='identity', position = 'dodge', width=.6, alpha=0.4)+
   # geom_segment(data=filter(inneed_table_female, Strategy=='5-5-5-5'),
   #              aes(x=as.numeric(risk_class)-0.25, xend=as.numeric(risk_class)+0.25, y=Proportion, yend=Proportion))+
-  facet_grid(~ Strategy)+
+  facet_grid(stratified~quantile)+
   ylab('Proportion')+
-  xlab('Risk class')+
-  ggtitle('Proportion of t*<t1 (women)')+
+  xlab('Risk group')+
+  ggtitle('Women')+
   theme_bw()+
-  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+  scale_color_manual(values = wes_palette("Moonrise3", n = 3))+
+  scale_fill_manual(values = wes_palette("Moonrise3", n = 3))+
+  new_scale_color()+new_scale_fill()+
+  geom_text(aes(x = 3, y = 1, label = paste0(Strategy)), size = 3) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+ 
+  labs(fill="Age", color='Age')
 
-mylegend<-g_legend(p_inneed_female+ labs(fill="Age", color='Age'))
+# mylegend<-g_legend(p_inneed_female+ labs(fill="Age", color='Age'))
 
-jpeg(file = '~/epi_paper/outp_figs/inneed.jpeg', units="in", width=8.5, height=3.5, res=600)
-grid.arrange(arrangeGrob(p_inneed_female + theme(legend.position="none"),
-                         p_inneed_male + theme(legend.position="none"), nrow=1, widths=c(1,1)),
-             mylegend, ncol=2, widths=c(8,1))
+jpeg(file = '~/epi_paper/outp_figs/inneed.jpeg', units="in", width=8.5, height=10, res=600)
+grid.arrange(p_inneed_female, p_inneed_male, nrow=2, heights=c(1,1),
+             top=textGrob('Proportion of individuals had crossed at the first assessment', gp=gpar(fontsize=18,font=8)))
+# grid.arrange(arrangeGrob(p_inneed_female + theme(legend.position="none"),
+#                          p_inneed_male + theme(legend.position="none"), nrow=2, heights=c(1,1)),
+#              mylegend, ncol=1, heights=c(10,1), top=textGrob('Proportion of t*<t1', gp=gpar(fontsize=20,font=8)))
 dev.off()
 
+#aggregate across risk gr
+inneed_table_female_agg <- merge(inneed_table_female, weight)
+inneed_table_male_agg <- merge(inneed_table_male, weight)
+inneed_table_agg <- rbind(inneed_table_female_agg, inneed_table_male_agg)
+
+inneed_table_agg %>% group_by(sex, Strategy, age_gr, ) %>% summarise(prop_agg = sum(Proportion*N_riskgr)/sum(N_riskgr)) %>% 
+  filter(age_gr=='All')
 #########################################
 # Avg time of staying in high risk: mean (t1-t* | t*<t1)
 #########################################
 tstar_undetect <- function(stg){
-  tstar_inneed <- tstar %>% filter(risk_class != 'Very_high') %>% 
+  tstar_inneed <- tstar %>% filter(risk_class != 'dark_red') %>% 
     mutate(delta = ifelse(pred_status==1, delta, 8)) %>% 
-    filter(delta <= case_when(risk_class == 'High' & lm_age<65 ~ stg[1],
-                              risk_class == 'High' & lm_age>=65 ~ stg[2],
-                              risk_class == 'Medium_high' & lm_age<65 ~ stg[3],
-                              risk_class == 'Medium_high' & lm_age>=65 ~ stg[4],
-                              risk_class == 'Medium_low' & lm_age<65 ~ stg[5],
-                              risk_class == 'Medium_low' & lm_age>=65 ~ stg[6],
-                              risk_class == 'Low' & lm_age<65 ~ stg[7],
-                              risk_class == 'Low' & lm_age>=65 ~ stg[8]))
+    filter(delta < case_when(risk_class == 'red' & lm_age<65 ~ stg[1],
+                              risk_class == 'red' & lm_age>=65 ~ stg[2],
+                              risk_class == 'orange' & lm_age<65 ~ stg[3],
+                              risk_class == 'orange' & lm_age>=65 ~ stg[4],
+                              risk_class == 'yellow' & lm_age<65 ~ stg[5],
+                              risk_class == 'yellow' & lm_age>=65 ~ stg[6],
+                              risk_class == 'green' & lm_age<65 ~ stg[7],
+                              risk_class == 'green' & lm_age>=65 ~ stg[8]))
   
   tstar_undet = tstar_inneed %>% group_by(sex, lm_age, risk_class) %>% 
-    mutate(undetect = case_when(risk_class == 'High' & lm_age<65 ~ stg[1],
-                                risk_class == 'High' & lm_age>=65 ~ stg[2],
-                                risk_class == 'Medium_high' & lm_age<65 ~ stg[3],
-                                risk_class == 'Medium_high' & lm_age>=65 ~ stg[4],
-                                risk_class == 'Medium_low' & lm_age<65 ~ stg[5],
-                                risk_class == 'Medium_low' & lm_age>=65 ~ stg[6],
-                                risk_class == 'Low' & lm_age<65 ~ stg[7],
-                                risk_class == 'Low' & lm_age>=65 ~ stg[8])-delta) %>% 
+    mutate(undetect = case_when(risk_class == 'red' & lm_age<65 ~ stg[1],
+                                risk_class == 'red' & lm_age>=65 ~ stg[2],
+                                risk_class == 'orange' & lm_age<65 ~ stg[3],
+                                risk_class == 'orange' & lm_age>=65 ~ stg[4],
+                                risk_class == 'yellow' & lm_age<65 ~ stg[5],
+                                risk_class == 'yellow' & lm_age>=65 ~ stg[6],
+                                risk_class == 'green' & lm_age<65 ~ stg[7],
+                                risk_class == 'green' & lm_age>=65 ~ stg[8])-delta) %>% 
     summarise(mean = mean(undetect)) %>% ungroup %>% 
     pivot_wider(names_from = risk_class, values_from = mean)
   return(tstar_undet)
@@ -393,10 +550,10 @@ wtime_tables <- function(stg_name, gender){
   stg <- stg_l[[gender]][[stg_name]]
   wtime <- tstar_undetect(stg) %>% filter(sex==gender)
   # write.csv(wtime_, file = paste0(out_path, 'wtime_inneed_',paste0(stg, collapse = ''),'.csv'))
-  wtime_ <- wtime %>% pivot_longer(cols = High:Low, names_to = 'risk_class', values_to = 'wait_time') 
+  wtime_ <- wtime %>% pivot_longer(cols = red:green, names_to = 'risk_class', values_to = 'wait_time') 
   
   cross_pct <- read.xlsx(paste0(out_path, 'prop_inneed_', gender, '.xlsx'), sheet = stg_name) %>% 
-    pivot_longer(cols = High:Low, names_to = 'risk_class', values_to = 'crossed')
+    pivot_longer(cols = red:green, names_to = 'risk_class', values_to = 'crossed')
   
   wtime_ <- merge(wtime_, riskgr_pct)
   wtime_ <- merge(wtime_, age_proportion)
@@ -414,7 +571,7 @@ wtime_tables <- function(stg_name, gender){
     mutate(age_gr='All') %>% select(-lm_age,-riskgr_pct_total,-n,-w, -crossed) %>% unique
   
   wtime_agg <- rbind(wtime_agg, wtime_agg2)
-  wtime_agg$risk_class %<>% factor(levels = c('High', 'Medium_high', 'Medium_low', 'Low'))
+  wtime_agg$risk_class %<>% factor(levels = c('red', 'orange', 'yellow', 'green'))
   wtime_agg$age_gr %<>% factor
   return(list(wtime = wtime, wtime_agg=wtime_agg))
 }
@@ -449,69 +606,93 @@ wtime_table_female <- do.call(rbind, lapply(names(wtime_table_female),
                                              function(e) wtime_table_female[[e]] %>% mutate(Strategy = e)))
 wtime_table_male <- do.call(rbind, lapply(names(wtime_table_male), 
                                            function(e) wtime_table_male[[e]] %>% mutate(Strategy = e)))
+
+wtime_table_female <- strategies_df %>% filter(sex=='female') %>% select(-sex) %>% merge(wtime_table_female)
+wtime_table_male <- strategies_df %>% filter(sex=='male') %>% select(-sex) %>% merge(wtime_table_male)
+
+wtime_table_female$quantile %<>% factor(levels = c('Benchmark','Q50','Q25','Q10','Q05'))
+wtime_table_male$quantile %<>% factor(levels = c('Benchmark','Q50','Q25','Q10','Q05'))
+wtime_table_female$stratified %<>% factor(levels = c('Non-stratified','Age-stratified'))
+wtime_table_male$stratified %<>% factor(levels = c('Non-stratified','Age-stratified'))
 wtime_table_female$Strategy %<>% factor(levels = names(stg_l$female))
 wtime_table_male$Strategy %<>% factor(levels = names(stg_l$male))
 
-
 p_wtime_male <- ggplot(wtime_table_male, aes(x=risk_class, y=wait_time, color=age_gr, fill=age_gr))+
-  geom_bar(stat='identity', position = 'dodge', width=.6, alpha=0.2)+
+  geom_bar(stat='identity', position = 'dodge', width=.6, alpha=0.4)+
   # geom_point(aes(shape = Strategy), size=3, alpha=0.8, position=position_jitter(h=0,w=0.2))+
   # scale_shape_manual(values=c(21:24))+
   # geom_segment(data=filter(wtime_table_male, Strategy=='5-5-5-5'),
   #              aes(x=as.numeric(risk_class)-0.25, xend=as.numeric(risk_class)+0.25, y=wtimeortion, yend=wtimeortion))+
-  facet_grid(~ Strategy)+
+  facet_grid(stratified~quantile)+
   ylab('Waiting time')+
-  xlab('Risk class')+
-  ggtitle('Average waiting time given t*<t1 (men)')+
+  xlab('Risk group')+
+  ggtitle('Men')+
   theme_bw()+
-  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+  scale_color_manual(values = wes_palette("Moonrise3", n = 3))+
+  scale_fill_manual(values = wes_palette("Moonrise3", n = 3))+
+  new_scale_color()+new_scale_fill()+
+  geom_text(aes(x = 3, y = Inf, label = paste0(Strategy)), size = 3, vjust =1.5) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+ 
+  labs(fill="Age", color='Age')
 
 p_wtime_female <- ggplot(wtime_table_female, aes(x=risk_class, y=wait_time, color=age_gr, fill=age_gr))+
-  geom_bar(stat='identity', position = 'dodge', width=.6, alpha=0.2)+
+  geom_bar(stat='identity', position = 'dodge', width=.6, alpha=0.4)+
   # scale_shape_manual(values=c(21:24))+
   # geom_segment(data=filter(wtime_table_female, Strategy=='5-5-5-5'),
   #              aes(x=as.numeric(risk_class)-0.25, xend=as.numeric(risk_class)+0.25, y=wtimeortion, yend=wtimeortion))+
-  facet_grid(~ Strategy)+
+  facet_grid(stratified~quantile)+
   ylab('Waiting time')+
-  xlab('Risk class')+
-  ggtitle('Average waiting time given t*<t1 (women)')+
+  xlab('Risk group')+
+  ggtitle('Women')+
   theme_bw()+
-  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+  scale_color_manual(values = wes_palette("Moonrise3", n = 3))+
+  scale_fill_manual(values = wes_palette("Moonrise3", n = 3))+
+  new_scale_color()+new_scale_fill()+
+  geom_text(aes(x = 3, y = Inf, label = paste0(Strategy)), size = 3, vjust =1.5) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+ 
+  labs(fill="Age", color='Age')
 
-mylegend<-g_legend(p_wtime_female+ labs(fill="Age", color='Age'))
+# mylegend<-g_legend(p_wtime_female+ labs(fill="Age", color='Age'))
 
-jpeg(file = '~/epi_paper/outp_figs/wtime.jpeg', units="in", width=8.5, height=3.5, res=600)
-grid.arrange(arrangeGrob(p_wtime_female + theme(legend.position="none"),
-                         p_wtime_male + theme(legend.position="none"), nrow=1, widths=c(1,1)),
-             mylegend, ncol=2, widths=c(8,1))
+jpeg(file = '~/epi_paper/outp_figs/wtime.jpeg', units="in", width=8.5, height=10, res=600)
+grid.arrange(p_wtime_female, p_wtime_male, nrow=2, heights=c(1,1),top=textGrob('Average waiting time after crossing', gp=gpar(fontsize=18,font=8)))
+# grid.arrange(arrangeGrob(p_wtime_female + theme(legend.position="none"),
+#                          p_wtime_male + theme(legend.position="none"), nrow=1, widths=c(1,1)),
+#              mylegend, ncol=2, widths=c(8,1))
 dev.off()
 
+#aggregate across risk gr
+n_inneed <- inneed_table_agg %>% mutate(N_inneed=Proportion*N_riskgr) %>% select(-Proportion, -N_riskgr)
+wtime_table <- rbind(wtime_table_female, wtime_table_male)
+wtime_table_agg <- merge(wtime_table, n_inneed)
+wtime_table_agg %>% group_by(sex, Strategy, age_gr) %>% summarise(wtime_agg = sum(wait_time*N_inneed)/sum(N_inneed)) %>% 
+  filter(age_gr=='All')
 #########################################
 # Proportion of T_wait > 1
 #########################################
 # tstar_uncovered <- function(stg){
 #   # Conditional on t* <= first assessment
-#   tstar_inneed <- tstar %>% filter(risk_class != 'Very_high') %>% 
+#   tstar_inneed <- tstar %>% filter(risk_class != 'dark_red') %>% 
 #     mutate(delta = ifelse(pred_status==1, delta, 8)) %>% 
-#     filter(delta <= case_when(risk_class == 'Low' & lm_age<65 ~ stg[1],
-#                               risk_class == 'Low' & lm_age>=65 ~ stg[2],
-#                               risk_class == 'Medium_low' & lm_age<65 ~ stg[3],
-#                               risk_class == 'Medium_low' & lm_age>=65 ~ stg[4],
-#                               risk_class == 'Medium_high' & lm_age<65 ~ stg[5],
-#                               risk_class == 'Medium_high' & lm_age>=65 ~ stg[6],
-#                               risk_class == 'High' & lm_age<65 ~ stg[7],
-#                               risk_class == 'High' & lm_age>=65 ~ stg[8]))
+#     filter(delta <= case_when(risk_class == 'green' & lm_age<65 ~ stg[1],
+#                               risk_class == 'green' & lm_age>=65 ~ stg[2],
+#                               risk_class == 'yellow' & lm_age<65 ~ stg[3],
+#                               risk_class == 'yellow' & lm_age>=65 ~ stg[4],
+#                               risk_class == 'orange' & lm_age<65 ~ stg[5],
+#                               risk_class == 'orange' & lm_age>=65 ~ stg[6],
+#                               risk_class == 'red' & lm_age<65 ~ stg[7],
+#                               risk_class == 'red' & lm_age>=65 ~ stg[8]))
 #   # window of 1 year
 #   stg = stg -1
 #   tstar_uncover = tstar_inneed %>% group_by(sex, lm_age, risk_class) %>% 
-#     summarise(mean = 1-mean(ifelse(delta < case_when(risk_class == 'Low' & lm_age<65 ~ stg[1],
-#                                                      risk_class == 'Low' & lm_age>=65 ~ stg[2],
-#                                                      risk_class == 'Medium_low' & lm_age<65 ~ stg[3],
-#                                                      risk_class == 'Medium_low' & lm_age>=65 ~ stg[4],
-#                                                      risk_class == 'Medium_high' & lm_age<65 ~ stg[5],
-#                                                      risk_class == 'Medium_high' & lm_age>=65 ~ stg[6],
-#                                                      risk_class == 'High' & lm_age<65 ~ stg[7],
-#                                                      risk_class == 'High' & lm_age>=65 ~ stg[8]), 0, 1))) %>% 
+#     summarise(mean = 1-mean(ifelse(delta < case_when(risk_class == 'green' & lm_age<65 ~ stg[1],
+#                                                      risk_class == 'green' & lm_age>=65 ~ stg[2],
+#                                                      risk_class == 'yellow' & lm_age<65 ~ stg[3],
+#                                                      risk_class == 'yellow' & lm_age>=65 ~ stg[4],
+#                                                      risk_class == 'orange' & lm_age<65 ~ stg[5],
+#                                                      risk_class == 'orange' & lm_age>=65 ~ stg[6],
+#                                                      risk_class == 'red' & lm_age<65 ~ stg[7],
+#                                                      risk_class == 'red' & lm_age>=65 ~ stg[8]), 0, 1))) %>% 
 #     ungroup %>% pivot_wider(names_from = risk_class, values_from = mean) %>%
 #     select(sex, lm_age, Low, Medium_low, Medium_high, High)
 #   return(tstar_uncover)
@@ -523,9 +704,10 @@ dev.off()
 
 
 
-##############
+####################################################################################################
+## Explorative below
 
-t_summary_age_risk <- tstar %>% filter(risk_class!='Very_high') %>% 
+t_summary_age_risk <- tstar %>% filter(risk_class!='dark_red') %>% 
   mutate(delta=ifelse(pred_status==0, 8, delta)) %>% group_by(lm_age, risk_class, sex) %>% 
   summarise(mean=mean(delta), median=median(delta), Q1=quantile(delta,0.25), Q3=quantile(delta,0.75))
 
@@ -537,7 +719,7 @@ t_summary_risk <- merge(t_summary_age_risk, weight, by=c('lm_age', 'sex', 'risk_
 t_summary_risk <- t_summary_risk %>% group_by(sex, risk_class) %>% mutate(w=w/sum(w)) %>% 
   summarise(mean=sum(mean*w),median=sum(median*w), Q1=sum(Q1*w), Q3=sum(Q3*w))
 
-levels(t_summary_risk$risk_class) <- c('Very_high(>5%)','High(3.75%-5%)','Medium_high(2.5%-3.75%)',
+levels(t_summary_risk$risk_class) <- c('dark_red(>5%)','High(3.75%-5%)','Medium_high(2.5%-3.75%)',
                                        'Medium_low(1.25%-2.5%)','Low(<1.25%)')
 
 jpeg(file = '~/epi_paper/outp_figs/t_aggregated.jpeg', units="in", width=4, height=4, res=300)

@@ -252,7 +252,7 @@ bmi = ggplot( beta_5_cox[ grep("bmi", rownames(beta_5_cox) ), ], aes(x = lm_age_
 shared_legend_time_dep = cowplot::get_legend( bmi )
 
 all_beta_cox_time_dep = cowplot::plot_grid(bmi + theme(legend.position = "none"),
-                                           hdl, sbp, smoke, tchol, NULL, align = 'hv',  labels=c('A', 'B',
+                                           sbp, tchol, hdl, smoke, NULL, align = 'hv',  labels=c('A', 'B',
                                                                                                'C', 'D',
                                                                                                'E',  ''), ncol = 2, nrow = 3)
 
