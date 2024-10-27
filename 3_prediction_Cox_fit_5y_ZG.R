@@ -47,7 +47,7 @@ outcomes_names = c('bmi','hdl','sbp', 'smokbin','tchol')
 N_outcomes = length(outcomes_names)
 
 #GLOBAL Horizon
-GLOB_horizon = 8
+GLOB_horizon = 10
 
 
 #N subjects
@@ -137,17 +137,19 @@ covariates_matrix = cbind(covariates_matrix,
                           as.data.table(matrix(0, nrow = length(unique(data_ext$patid)), 
                                                ncol = N_outcomes*(GLOB_horizon + 1))))
 colnames(covariates_matrix) = c("patid", "derivation", "diab_ind", "bp_med", "statin_bin",
-                                   'Townsend', 'renal_disease','atrial_fibrillation','rheumatoid_arthritis',
-                                   'Severe_mental_illness_ind','Migraine_ind', 'depression_ind', 'family_history',
-                                   'bmi_blup_0', 'hdl_blup_0',  'sbp_blup_0', 'smoke_blup_0', 'tchol_blup_0',
-                                   'bmi_blup_1', 'hdl_blup_1',   'sbp_blup_1',  'smoke_blup_1', 'tchol_blup_1',
-                                   'bmi_blup_2', 'hdl_blup_2',   'sbp_blup_2',  'smoke_blup_2', 'tchol_blup_2',
-                                   'bmi_blup_3', 'hdl_blup_3',   'sbp_blup_3',  'smoke_blup_3', 'tchol_blup_3',
-                                   'bmi_blup_4', 'hdl_blup_4',   'sbp_blup_4',  'smoke_blup_4', 'tchol_blup_4',
-                                   'bmi_blup_5', 'hdl_blup_5',   'sbp_blup_5',  'smoke_blup_5', 'tchol_blup_5',
-                                   'bmi_blup_6', 'hdl_blup_6',   'sbp_blup_6',  'smoke_blup_6', 'tchol_blup_6',
-                                   'bmi_blup_7', 'hdl_blup_7',   'sbp_blup_7',  'smoke_blup_7', 'tchol_blup_7',
-                                   'bmi_blup_8', 'hdl_blup_8',   'sbp_blup_8',  'smoke_blup_8', 'tchol_blup_8'
+                                'Townsend', 'renal_disease','atrial_fibrillation','rheumatoid_arthritis',
+                                'Severe_mental_illness_ind','Migraine_ind', 'depression_ind', 'family_history',
+                                'bmi_blup_0', 'hdl_blup_0',  'sbp_blup_0', 'smoke_blup_0', 'tchol_blup_0',
+                                'bmi_blup_1', 'hdl_blup_1',   'sbp_blup_1',  'smoke_blup_1', 'tchol_blup_1',
+                                'bmi_blup_2', 'hdl_blup_2',   'sbp_blup_2',  'smoke_blup_2', 'tchol_blup_2',
+                                'bmi_blup_3', 'hdl_blup_3',   'sbp_blup_3',  'smoke_blup_3', 'tchol_blup_3',
+                                'bmi_blup_4', 'hdl_blup_4',   'sbp_blup_4',  'smoke_blup_4', 'tchol_blup_4',
+                                'bmi_blup_5', 'hdl_blup_5',   'sbp_blup_5',  'smoke_blup_5', 'tchol_blup_5',
+                                'bmi_blup_6', 'hdl_blup_6',   'sbp_blup_6',  'smoke_blup_6', 'tchol_blup_6',
+                                'bmi_blup_7', 'hdl_blup_7',   'sbp_blup_7',  'smoke_blup_7', 'tchol_blup_7',
+                                'bmi_blup_8', 'hdl_blup_8',   'sbp_blup_8',  'smoke_blup_8', 'tchol_blup_8',
+                                'bmi_blup_9', 'hdl_blup_9',   'sbp_blup_9',  'smoke_blup_9', 'tchol_blup_9',
+                                'bmi_blup_10', 'hdl_blup_10',   'sbp_blup_10',  'smoke_blup_10', 'tchol_blup_10'
 )
 
 
@@ -422,15 +424,96 @@ for(l in 0:GLOB_horizon)
   
   stopifnot(min(dati_baseline[ patid %in% patid_in_time, time_cvd ]) > 0)
  
-  five_year_risk = estimated_surv[ dim(estimated_surv)[1],  ] #selecting the 5-year CVD risk
+  five_year_risk = 1-estimated_surv[ dim(estimated_surv)[1],  ] #selecting the 5-year CVD risk
   risk_prediction[ patid %in% dati_baseline[, patid], paste0("5.y.risk.",l) := five_year_risk  ]
-  risk_prediction[ patid %in% dati_baseline[, patid], paste0("5.y.risk.status.",l) := ifelse(five_year_risk <= 0.95, 1, 0) ]
+  # risk_prediction[ patid %in% dati_baseline[, patid], paste0("5.y.risk.status.",l) := ifelse(five_year_risk <= 0.95, 1, 0) ]
   # hitting_time = apply(estimated_surv, 2, function(x) which(x  <= 0.95)[1] )
 }
 
+##############################################
+# add ten year risk
+  l=0
+  time_origin = j
+  time_horizon = j + 10
+  
+  patid_out_time = data_ext[ (!is.na(death_date) & death_age <= time_origin) | 
+                               (!is.na(cvd_date) & cvd_age  <= time_origin) | 
+                               end_age <= time_origin , patid ]
+  data_ext_in_time = data_ext[ !patid %in% patid_out_time, ]
+  patid_in_time = unique(data_ext_in_time$patid)
+  n_patid = length(unique(data_ext_in_time$patid))
+  
+  #setting the outcomes of interest
+  outcome_time_death  = data_ext_in_time[exp_count == 1, lapply(.SD, function(x){
+    ifelse(is.na(x), min(time_horizon, end_age) - time_origin, min(time_horizon, x) - time_origin)
+  }), .SDcols = 'death_age',  by = patid ]
+  outcome_time_cvd    = data_ext_in_time[exp_count == 1, lapply(.SD, function(x){
+    ifelse(is.na(x), min(time_horizon, end_age) - time_origin, min(time_horizon, x) - time_origin)
+  }), .SDcols = 'cvd_age',    by = patid ]
+  outcome_time_statin = data_ext_in_time[ exp_count == 1, lapply(.SD, function(x) ifelse(is.na(x), min(time_horizon, end_age) - time_origin, min(time_horizon, x) - time_origin)), .SDcols = 'statin_age', by = patid ]
+  
+  outcome_status_death  = data_ext_in_time[exp_count == 1, lapply(.SD, function(x){
+    ifelse(x <= time_horizon & x > time_origin & !is.na(x), 1, 0)
+  }), .SDcols = 'death_age' ]
+  outcome_status_cvd    = data_ext_in_time[ exp_count == 1, lapply(.SD, function(x) ifelse(x <= time_horizon & x > time_origin & !is.na(x), 1, 0)), .SDcols = 'cvd_age' ]
+  outcome_status_statin = data_ext_in_time[ exp_count == 1, lapply(.SD, function(x) ifelse(x <= time_horizon & x > time_origin & !is.na(x), 1, 0)), .SDcols = 'statin_age' ]
+  
+  outcome_time_death_cvd   = apply(cbind(outcome_time_cvd$cvd_age, outcome_time_death$death_age), 1, min)
+  outcome_status_death_cvd = rep(0, length(outcome_time_cvd$cvd_age))
+  #Fatal cvd
+  outcome_status_death_cvd[outcome_time_cvd$cvd_age == outcome_time_death$death_age & 
+                             outcome_status_cvd$cvd_age == 1 & 
+                             outcome_status_death$death_age == 1] = 2
+  #Non fatal CVD
+  outcome_status_death_cvd[(outcome_time_cvd$cvd_age < outcome_time_death$death_age & outcome_status_cvd$cvd_age == 1)|
+                             (outcome_time_cvd$cvd_age == outcome_time_death$death_age & 
+                                outcome_status_cvd$cvd_age == 1 &  outcome_status_death$death_age == 0)] = 1
+  ############################################
+  #Death for other causes
+  outcome_status_death_cvd[  outcome_status_death$death_age == 1 & outcome_status_cvd$cvd_age == 0  ] = 3
+  
+  #SETTING AS 0 THOSE PEOPLE THAT DO NOT BELONG TO THE LANDMARK SUBCOHORT
+  dati_baseline[ patid %in% patid_in_time, 'status_cvd_death' ]  = outcome_status_death_cvd
+  dati_baseline[ patid %in% patid_in_time, 'status_death'  ]     = outcome_status_death
+  dati_baseline[ patid %in% patid_in_time, 'status_cvd' ]       = outcome_status_cvd
+  dati_baseline[ patid %in% patid_in_time, 'status_statin' ]    = outcome_status_statin
+  dati_baseline[ patid %in% patid_in_time, 'time_cvd_death' ]   = outcome_time_death_cvd
+  dati_baseline[ patid %in% patid_in_time, 'time_death' ]       = outcome_time_death$death_age
+  dati_baseline[ patid %in% patid_in_time, 'time_cvd' ]         = outcome_time_cvd$cvd_age
+  dati_baseline[ patid %in% patid_in_time, 'time_statin' ]      = outcome_time_statin$statin_age
+  
+  idx_smoke = which(endsWith( colnames(covariates_matrix), paste0("smoke_blup_", l)))
+  idx_hdl = which(endsWith( colnames(covariates_matrix), paste0("hdl_blup_", l)))
+  idx_sbp = which(endsWith( colnames(covariates_matrix), paste0("sbp_blup_", l)))
+  idx_tchol = which(endsWith( colnames(covariates_matrix), paste0("tchol_blup_", l)))
+  idx_bmi = which(endsWith( colnames(covariates_matrix), paste0("bmi_blup_", l)))
+  
+  dati_baseline[, 'smoke_blup_FE4' ] = covariates_matrix[ , ..idx_smoke ] 
+  dati_baseline[, 'hdl_blup_FE4' ]   = covariates_matrix[ , ..idx_hdl ]
+  dati_baseline[, 'sbp_blup_FE4'   ] = covariates_matrix[ , ..idx_sbp ]
+  dati_baseline[, 'tchol_blup_FE4' ] = covariates_matrix[ , ..idx_tchol ]
+  dati_baseline[, 'bmi_blup_FE4' ]  = covariates_matrix[ , ..idx_bmi ]
+  
+  cox_formula_10CVD = as.formula(paste("Surv(time_cvd, status_cvd)~", cox_cov))
+  model_cox_10CVD = coxph(cox_formula_10CVD, data = dati_baseline, x = T)
+  #summary(model_cox_5CVD_new)
+  
+  print(paste("Cox model fitted for 10 year"))
+  
+  base_haz_10CVD  = basehaz(model_cox_10CVD, center = T)
+  
+  #Estimates for 5-year CVD risk prediction at landmark age (= on the whole landmark cohort) 
+  lp_der_10CVD_all_pt_lm = predict(model_cox_10CVD, newdata = dati_baseline[, ], type = "lp")    
+  estimated_surv = exp(- matrix(base_haz_10CVD$hazard, ncol = 1) %*% matrix(exp(lp_der_10CVD_all_pt_lm), nrow = 1))
+  dim(estimated_surv)
+  
+  stopifnot(min(dati_baseline[ patid %in% patid_in_time, time_cvd ]) > 0)
+  
+  pred_risk = 1-estimated_surv[ dim(estimated_surv)[1],  ] #selecting the 5-year CVD risk
+  risk_prediction[ patid %in% dati_baseline[, patid], paste0("risk_y10") := pred_risk]
 
+#########################################################
 colnames(cum_haz_est)= c("hazard_cvd_outcome", "time_cvd_outcome", "hazard_death_outcome", "time_death_outcome", "hazard_composite_outcome", "time_composite_outcome")
-
 
 warnings()
 

@@ -175,7 +175,7 @@ ggsave(final_plot_beta_LMEM,
 beta_5_cox = NULL 
 for( gender in c("female", "male")){
   for( i in lm_age ){
-    for( j in 0:8){
+    for( j in 0:10){
       load(paste0(in_path, "cox_model_RIRS_", i,"_", j, "_", gender, ".RData"))
       beta_5_cox_temp = data.frame( exp_var = exp(model_cox_5CVD$coefficients) )
       beta_5_cox_temp$lower  = exp( confint(model_cox_5CVD)[,1] )

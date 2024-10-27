@@ -2,6 +2,7 @@ in_path <- '/rds/project/jmmh2/rds-jmmh2-hes_data/electronic_health_records/cprd
 
 library(tidyverse)
 library(magrittr)
+select <- dplyr::select
 
 load(paste0(in_path,'outcomes_new.RData'))
 load(paste0(in_path,'exposures_merged_new_popmean.RData'))
@@ -25,6 +26,45 @@ outcomes %>% summarise(N=n(),age_mean=mean((start_date - d_yob )/365.25), age_sd
 outcomes %>% summarise(n=sum(cvd_ind, na.rm = T),mean=sum(cvd_ind, na.rm = T)/length(cvd_ind))
 
 outcomes$gender %>% table
+is.na(outcomes$Townsend) %>% mean
+
+
+#####################
+# Nr of measurements
+exposures_count <- exposures_merged %>% select(patid, exposure) %>% group_by(patid, exposure) %>%
+  summarise(count = n(), .groups = "drop")
+
+exposures_count %<>% group_by(patid) %>% mutate(type_exposure = n()) %>% ungroup
+
+# Histogram for the number of patid with each type_exposure value
+p1 <- ggplot(exposures_count %>% distinct(patid, type_exposure), aes(x = type_exposure)) +
+  geom_histogram(binwidth = 1, color = "black", fill = "skyblue") +
+  labs(title = "Count of individuals by Nr. measured exposure types",
+       x = "Count of exposure types",
+       y = "Number of individuals") +
+  theme_minimal()
+
+# Histogram for the number of patid with each count for each exposure
+p2 <- ggplot(exposures_count, aes(x = count)) +
+  geom_histogram(binwidth = 1, color = "black", fill = "lightgreen") +
+  facet_wrap(~ factor(exposure, levels = c("bmi", "sbp", "tchol", "hdl", "smokbin")), 
+             scales = "free", 
+             labeller = as_labeller(c(bmi = "BMI", sbp = "SBP", 
+                                      tchol = "Tot. Chol.", hdl = "HDL", 
+                                      smokbin = "Smoke"))) +
+  xlim(c(0,20)) +
+  labs(title = "Count of individuals by number of each exposure (truncaated at 20)",
+       x = "Count of measurements",
+       y = "Number of individuals") +
+  theme_minimal()
+
+jpeg(file = '~/epi_paper/outp_figs/Nr_type.jpeg', units="in", width=5, height=2.5, res=600)
+p1
+dev.off()
+
+jpeg(file = '~/epi_paper/outp_figs/Nr_each.jpeg', units="in", width=8, height=5, res=600)
+p2
+dev.off()
 #####################
 # Male
 
@@ -220,3 +260,12 @@ exposures_first %>% filter(gender=='Female') %>% filter(derivation == 'validatio
 # first HDL after entry
 exposures_first %>% filter(gender=='Female') %>% filter(derivation == 'validation') %>% 
   filter(exposure=='smokbin') %>% summarise(N=n(),mean=mean(original), sd=sd(original))
+
+
+################################################
+# in_path <- '/rds/project/jmmh2/rds-jmmh2-hes_data/electronic_health_records/cprd/DataFiles/analysis/zhujie/data_created/'
+# j=60
+# gender='female'
+# load(paste0(in_path, gender, "/data_lm_",j, "_", gender,".RData"))
+# max(data_ext$end_age - j)
+# which.max(data_ext$end_age - j)

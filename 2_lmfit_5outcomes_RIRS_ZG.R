@@ -3,7 +3,7 @@
 #LOCAL = FALSE
 
 # gender='male'
-# j=80
+# j=40
 
 args=commandArgs(trailingOnly = TRUE)
 j      = as.integer(args[1])
